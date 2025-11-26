@@ -63,7 +63,7 @@ You can safely append new chunks forever. The result is always a valid, seekable
 
 ### Live Demo
 
-~~https://chamnie.github.io/ogg-opus-concat-demo~~ (TBD)
+~~https://chamie.github.io/ogg-opus-concat-demo~~ (TBD)
 
 ### Install
 
