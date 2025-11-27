@@ -82,6 +82,16 @@ const updatePage = (data, offset, newSerial, newSequence, newGranule) => {
     view.setUint32(22, crc, true);
     return pageData;
 };
+const findOggStart = (data) => {
+    // Scan for first "OggS" magic bytes
+    for (let i = 0; i <= data.length - 4; i++) {
+        if (data[i] === 0x4f && data[i + 1] === 0x67 &&
+            data[i + 2] === 0x67 && data[i + 3] === 0x53) {
+            return i;
+        }
+    }
+    return -1; // Not found
+};
 export const concatenateOpusFiles = async (chunks) => {
     const pages = [];
     let globalPageSequence = 0;
@@ -89,7 +99,16 @@ export const concatenateOpusFiles = async (chunks) => {
     let serialNumber = -Infinity;
     for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
         const chunk = chunks[chunkIndex];
-        let offset = 0;
+        // Find where Ogg data actually starts (skip any metadata/junk at the beginning)
+        const oggStart = findOggStart(chunk);
+        if (oggStart === -1) {
+            debugLog(`ERROR: No Ogg data found in file!`);
+            continue;
+        }
+        if (oggStart > 0) {
+            debugLog(`Skipping ${oggStart} bytes of non-Ogg data at start`);
+        }
+        let offset = oggStart;
         let pageCount = 0;
         let maxGranuleInFile = BigInt(0);
         while (offset < chunk.length) {
