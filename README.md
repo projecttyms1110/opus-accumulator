@@ -3,11 +3,10 @@
 **Concatenate multiple Opus-in-Ogg files into a single valid .opus stream — instantly, without re-encoding.**
 
 Perfect for **MediaRecorder**, WebRTC recordings, voice messages, or any app that receives audio in chunks.
-
 ```ts
 import { concatenateOpusFiles } from "ogg-opus-concat";
 
-const merged = await concatenateOpusFiles([chunk1, chunk2, chunk3, ...]);
+const merged = concatenateOpusFiles([chunk1, chunk2, chunk3, ...]);
 // → Uint8Array ready to play or save as .opus
 ```
 
@@ -18,8 +17,8 @@ Each chunk has its own headers (OpusHead + OpusTags), sequence numbers, and chec
 
 Simply appending them → **corrupted file** (wrong sequence numbers, duplicate headers, invalid checksums).
 
-This package fixes all of that **in ~12 KB of WebAssembly**:
-- Keeps the first file’s headers intact
+This package fixes all of that **in pure TypeScript**:
+- Keeps the first file's headers intact
 - Strips duplicate OpusHead/OpusTags from subsequent chunks
 - Rewrites page sequence numbers and serial numbers
 - Adjusts granule positions so playback is seamless
@@ -32,13 +31,12 @@ You can safely append new chunks forever. The result is always a valid, seekable
 ### Features
 
 - Zero dependencies
-- Tiny: ~12 KB (WASM) → ~4 KB gzipped
+- Tiny: ~2 KB minified + gzipped
 - Works in browser and Node.js
-- No native modules, no ffmpeg, no decoding
+- Pure TypeScript — no WebAssembly, no native modules, no ffmpeg, no decoding
 - ~~Battle-tested with MediaRecorder, WebRTC, WhatsApp-style voice messages~~ (not yet, to be updated)
 
 ### Usage
-
 ```html
 <input type="file" multiple accept=".opus,audio/ogg" id="files">
 <script type="module">
@@ -49,7 +47,7 @@ You can safely append new chunks forever. The result is always a valid, seekable
       Array.from(e.target.files).map(f => f.arrayBuffer().then(b => new Uint8Array(b)))
     );
 
-    const result = await concatenateOpusFiles(buffers);
+    const result = concatenateOpusFiles(buffers);
 
     const blob = new Blob([result], { type: "audio/opus" });
     const url = URL.createObjectURL(blob);
@@ -66,14 +64,19 @@ You can safely append new chunks forever. The result is always a valid, seekable
 ~~https://chamie.github.io/ogg-opus-concat-demo~~ (TBD)
 
 ### Install
-
 ```bash
 npm install ogg-opus-concat
 ```
-
 ```ts
 import { concatenateOpusFiles } from "ogg-opus-concat";
 ```
+
+### API
+```ts
+function concatenateOpusFiles(files: Uint8Array[]): Uint8Array
+```
+
+Takes an array of Opus-in-Ogg file buffers and returns a single concatenated buffer.
 
 ### License
 

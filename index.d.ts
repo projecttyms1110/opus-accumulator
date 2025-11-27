@@ -1,1 +1,0 @@
-export function concatenateOpusFiles(files: Uint8Array[]): Promise<Uint8Array>;
