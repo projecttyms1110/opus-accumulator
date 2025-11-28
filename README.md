@@ -14,8 +14,12 @@ const merged = concatenateOpusFiles([chunk1, chunk2, chunk3, ...]);
 
 `MediaRecorder` (and many streaming audio sources) emits **self-contained Ogg/Opus files** on every `ondataavailable`.  
 Each chunk has its own headers (OpusHead + OpusTags), sequence numbers, and checksums.
+Well, Chrome gives you WebM with Opus inside and Safari doesn't give you anything but mp4, but the common ground is often Opus,
+natively or through some libs. And that's especially useful as with '.opus' files' native Ogg format you can add frames by just
+appending them to the end of the file, without re-writing anything.
 
-Simply appending them → **corrupted file** (wrong sequence numbers, duplicate headers, invalid checksums).
+Yet simply appending the files together → **corrupted file** (wrong sequence numbers, duplicate headers, invalid checksums,
+"playlist" file with many files inside) that could only be played/processed successfully if you're lucky with your tools.
 
 This package fixes all of that **in pure TypeScript**:
 - Keeps the first file's headers intact

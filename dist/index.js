@@ -195,19 +195,17 @@ export const concatenateOpusFiles = async (chunks) => {
                     serialNumber = page.serialNumber;
                     debugLog(`Using serial number: ${serialNumber}`);
                 }
-                // Keep OpusHead page
+                // Keep OpusHead page as-is
                 if (pageCount === 0) {
-                    const newPage = updatePage(chunk, offset, serialNumber, globalPageSequence, null);
-                    if (newPage) {
-                        pages.push(newPage);
-                        debugLog(`  -> Added OpusHead as global page ${globalPageSequence}`);
-                        globalPageSequence++;
-                        // Add minimal OpusTags page right after OpusHead
-                        const opusTagsPage = createMinimalOpusTagsPage(serialNumber, globalPageSequence);
-                        pages.push(opusTagsPage);
-                        debugLog(`  -> Added minimal OpusTags as global page ${globalPageSequence}`);
-                        globalPageSequence++;
-                    }
+                    const opusHeadPage = chunk.slice(offset, offset + page.pageSize);
+                    pages.push(opusHeadPage);
+                    debugLog(`  -> Added OpusHead as-is as global page ${globalPageSequence}`);
+                    globalPageSequence++;
+                    // Add minimal OpusTags page right after OpusHead
+                    const opusTagsPage = createMinimalOpusTagsPage(serialNumber, globalPageSequence);
+                    pages.push(opusTagsPage);
+                    debugLog(`  -> Added minimal OpusTags as global page ${globalPageSequence}`);
+                    globalPageSequence++;
                     pageCount++;
                     offset += page.pageSize;
                     continue;
@@ -218,18 +216,6 @@ export const concatenateOpusFiles = async (chunks) => {
                     pageCount++;
                     offset += page.pageSize;
                     continue;
-                }
-                // Add remaining pages from first file
-                const newPage = updatePage(chunk, offset, serialNumber, globalPageSequence, null);
-                if (newPage) {
-                    pages.push(newPage);
-                    if (page.headerType & 0x04) {
-                        debugLog(`  -> Added as global page ${globalPageSequence} (EOS flag cleared)`);
-                    }
-                    else {
-                        debugLog(`  -> Added as global page ${globalPageSequence}`);
-                    }
-                    globalPageSequence++;
                 }
             }
             else {
@@ -246,17 +232,18 @@ export const concatenateOpusFiles = async (chunks) => {
                     newGranule = page.granulePosition + cumulativeGranule;
                     debugLog(`  -> Adjusted granule: ${page.granulePosition} + ${cumulativeGranule} = ${newGranule}`);
                 }
-                const newPage = updatePage(chunk, offset, serialNumber, globalPageSequence, newGranule);
-                if (newPage) {
-                    pages.push(newPage);
-                    if (page.headerType & 0x04) {
-                        debugLog(`  -> Added as global page ${globalPageSequence} (EOS flag cleared)`);
-                    }
-                    else {
-                        debugLog(`  -> Added as global page ${globalPageSequence}`);
-                    }
-                    globalPageSequence++;
+            }
+            // Add remaining pages with updated serial number, sequence, and granule
+            const newPage = updatePage(chunk, offset, serialNumber, globalPageSequence, null);
+            if (newPage) {
+                pages.push(newPage);
+                if (page.headerType & 0x04) {
+                    debugLog(`  -> Added as global page ${globalPageSequence} (EOS flag cleared)`);
                 }
+                else {
+                    debugLog(`  -> Added as global page ${globalPageSequence}`);
+                }
+                globalPageSequence++;
             }
             offset += page.pageSize;
             pageCount++;
