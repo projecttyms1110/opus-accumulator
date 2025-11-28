@@ -11,7 +11,7 @@ interface OggPage {
     offset: number;
 }
 
-const isDebug = false;
+const isDebug = true;
 const debugLog = (...args: any[]) => isDebug && console.debug(...args);
 
 // CRC32 lookup table
@@ -126,7 +126,7 @@ const createMinimalOpusTagsPage = (
     serialNumber: number,
     pageSequence: number,
 ): Uint8Array => {
-    const vendorString = "opus-concat";
+    const vendorString = "ogg-opus-concat";
     const vendorLength = vendorString.length;
 
     // OpusTags structure:
@@ -265,6 +265,8 @@ export const concatenateOpusFiles = async (
                 maxGranuleInFile = page.granulePosition;
             }
 
+            let newGranule: bigint | null = null;
+
             // First file: keep OpusHead (page 0), skip original OpusTags, add our own
             if (chunkIndex === 0) {
                 // Capture serial number from first file's first page
@@ -311,7 +313,6 @@ export const concatenateOpusFiles = async (
                 }
 
                 // Adjust granule position
-                let newGranule: bigint | null = null;
                 if (page.granulePosition >= BigInt(0)) {
                     newGranule = page.granulePosition + cumulativeGranule;
                     debugLog(
@@ -326,7 +327,7 @@ export const concatenateOpusFiles = async (
                 offset,
                 serialNumber,
                 globalPageSequence,
-                null,
+                newGranule,
             );
             if (newPage) {
                 pages.push(newPage);

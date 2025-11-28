@@ -83,7 +83,7 @@ const updatePage = (data, offset, newSerial, newSequence, newGranule) => {
     return pageData;
 };
 const createMinimalOpusTagsPage = (serialNumber, pageSequence) => {
-    const vendorString = "opus-concat";
+    const vendorString = "ogg-opus-concat";
     const vendorLength = vendorString.length;
     // OpusTags structure:
     // - "OpusTags" magic signature (8 bytes)
@@ -188,6 +188,7 @@ export const concatenateOpusFiles = async (chunks) => {
                 page.granulePosition > maxGranuleInFile) {
                 maxGranuleInFile = page.granulePosition;
             }
+            let newGranule = null;
             // First file: keep OpusHead (page 0), skip original OpusTags, add our own
             if (chunkIndex === 0) {
                 // Capture serial number from first file's first page
@@ -227,14 +228,13 @@ export const concatenateOpusFiles = async (chunks) => {
                     continue;
                 }
                 // Adjust granule position
-                let newGranule = null;
                 if (page.granulePosition >= BigInt(0)) {
                     newGranule = page.granulePosition + cumulativeGranule;
                     debugLog(`  -> Adjusted granule: ${page.granulePosition} + ${cumulativeGranule} = ${newGranule}`);
                 }
             }
             // Add remaining pages with updated serial number, sequence, and granule
-            const newPage = updatePage(chunk, offset, serialNumber, globalPageSequence, null);
+            const newPage = updatePage(chunk, offset, serialNumber, globalPageSequence, newGranule);
             if (newPage) {
                 pages.push(newPage);
                 if (page.headerType & 0x04) {
