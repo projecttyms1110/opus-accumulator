@@ -11,8 +11,25 @@ interface OggPage {
     offset: number;
 }
 
-const isDebug = true;
-const debugLog = (...args: any[]) => isDebug && console.debug(...args);
+let isDebug = false;
+let customLogger: ((...args: any[]) => void) | null = null;
+
+export const setDebug = (enabled: boolean) => {
+    isDebug = enabled;
+};
+
+export const setCustomDebugLogger = (logger: (...args: any[]) => void) => {
+    customLogger = logger;
+};
+
+const debugLog = (...args: any[]) => {
+    if (!isDebug) return;
+    if (customLogger) {
+        customLogger(...args);
+    } else {
+        console.debug(...args);
+    }
+};
 
 // CRC32 lookup table
 const makeCRCTable = (): Uint32Array => {
@@ -119,9 +136,20 @@ const updatePage = (
     const crc = calculateCRC(pageData);
     view.setUint32(22, crc, true);
 
+    // Log the updated page details
+    debugLog(
+        `Page updated to: seq=${page.pageSequence}, granule=${page.granulePosition}, size=${page.pageSize}, headerType=${page.headerType}`,
+    );
+
     return pageData;
 };
 
+/**
+ * Create a minimal OpusTags page with length/duration info omitted
+ * @param serialNumber stream serial number
+ * @param pageSequence page sequence number
+ * @returns Uint8Array representing the OpusTags page
+ */
 const createMinimalOpusTagsPage = (
     serialNumber: number,
     pageSequence: number,
@@ -158,7 +186,7 @@ const createMinimalOpusTagsPage = (
     body[offset++] = 0;
     body[offset++] = 0;
 
-    // Create Ogg page
+    // Create Ogg page with proper segment table
     const segments = Math.ceil(bodySize / 255);
     const segmentTable = new Uint8Array(segments);
     for (let i = 0; i < segments - 1; i++) {
@@ -210,8 +238,12 @@ const createMinimalOpusTagsPage = (
     return page;
 };
 
+/**
+ * Scan for first "OggS" magic bytes in data
+ * @param data 
+ * @returns position of first OggS or -1 if not found
+ */
 const findOggStart = (data: Uint8Array): number => {
-    // Scan for first "OggS" magic bytes
     for (let i = 0; i <= data.length - 4; i++) {
         if (data[i] === 0x4f && data[i + 1] === 0x67 &&
             data[i + 2] === 0x67 && data[i + 3] === 0x53) {
@@ -221,6 +253,10 @@ const findOggStart = (data: Uint8Array): number => {
     return -1; // Not found
 };
 
+/**
+ * Concatenate multiple Opus-in-Ogg files into a single logical bitstream.
+ * Adjusts page headers, granule positions, and replaces OpusTags.
+ */
 export const concatenateOpusFiles = async (
     chunks: Uint8Array[],
 ): Promise<Uint8Array> => {
@@ -364,4 +400,107 @@ export const concatenateOpusFiles = async (
     }
 
     return result;
+};
+
+interface AppendMeta {
+    serialNumber: number;
+    lastPageSequence: number;
+    cumulativeGranule: bigint;
+    totalSize: number;
+}
+
+/**
+ * Parse and prepare an existing Opus file for appending
+ * Returns the prepared file (with EOS cleared, OpusTags replaced) and metadata
+ * required for concatenation of more files within the same logical bitstream.
+ */
+export const prepareForConcat = (
+    chunk: Uint8Array
+): { prepared: Uint8Array; meta: AppendMeta } => {
+    const oggStart = findOggStart(chunk);
+    if (oggStart === -1) {
+        throw new Error('No Ogg data found in file');
+    }
+
+    const pages: Uint8Array[] = [];
+    let offset = oggStart;
+    let pageCount = 0;
+    let serialNumber: number = -Infinity;
+    let newPageSequence = 0; // Track our new sequential numbering
+    let maxGranule = BigInt(0);
+
+    while (offset < chunk.length) {
+        const page = parseOggPage(chunk, offset);
+        if (!page) break;
+
+        if (serialNumber === -Infinity) {
+            serialNumber = page.serialNumber;
+        }
+
+        // Handle first two pages specially
+        if (pageCount === 0) {
+            // Keep OpusHead as-is (but ensure sequence is 0)
+            const pageData = new Uint8Array(page.pageSize);
+            pageData.set(chunk.slice(offset, offset + page.pageSize));
+            const view = new DataView(pageData.buffer);
+            view.setUint32(18, newPageSequence, true);
+            view.setUint32(22, 0, true);
+            const crc = calculateCRC(pageData);
+            view.setUint32(22, crc, true);
+            pages.push(pageData);
+            newPageSequence++;
+        } else if (pageCount === 1) {
+            // Replace OpusTags with minimal version
+            const minimalTags = createMinimalOpusTagsPage(serialNumber, newPageSequence);
+            pages.push(minimalTags);
+            newPageSequence++;
+        } else {
+            // For data pages: clear EOS flag and renumber sequence
+            const pageData = new Uint8Array(page.pageSize);
+            pageData.set(chunk.slice(offset, offset + page.pageSize));
+            const view = new DataView(pageData.buffer);
+
+            // Update page sequence
+            view.setUint32(18, newPageSequence, true);
+
+            // Clear EOS flag if present
+            if (pageData[5] & 0x04) {
+                pageData[5] = pageData[5] & ~0x04;
+            }
+
+            // Recalculate CRC
+            view.setUint32(22, 0, true);
+            const crc = calculateCRC(pageData);
+            view.setUint32(22, crc, true);
+
+            pages.push(pageData);
+            newPageSequence++;
+        }
+
+        if (page.granulePosition >= BigInt(0) && page.granulePosition > maxGranule) {
+            maxGranule = page.granulePosition;
+        }
+
+        offset += page.pageSize;
+        pageCount++;
+    }
+
+    // Combine all pages
+    const totalSize = pages.reduce((sum, page) => sum + page.length, 0);
+    const prepared = new Uint8Array(totalSize);
+    let resultOffset = 0;
+    for (const page of pages) {
+        prepared.set(page, resultOffset);
+        resultOffset += page.length;
+    }
+
+    return {
+        prepared,
+        meta: {
+            serialNumber,
+            lastPageSequence: newPageSequence - 1,
+            cumulativeGranule: maxGranule,
+            totalSize: prepared.length
+        }
+    };
 };
