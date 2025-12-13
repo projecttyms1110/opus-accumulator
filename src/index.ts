@@ -260,144 +260,19 @@ const findOggStart = (data: Uint8Array): number => {
 export const concatenateOpusFiles = async (
     chunks: Uint8Array[],
 ): Promise<Uint8Array> => {
-    const pages: Uint8Array[] = [];
-    let globalPageSequence = 0;
-    let cumulativeGranule = BigInt(0);
-    let serialNumber: number = -Infinity;
-
-    for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
-        const chunk = chunks[chunkIndex];
-
-        // Find where Ogg data actually starts (skip any metadata/junk at the beginning)
-        const oggStart = findOggStart(chunk);
-        if (oggStart === -1) {
-            debugLog(`ERROR: No Ogg data found in file!`);
-            continue;
-        }
-        if (oggStart > 0) {
-            debugLog(`Skipping ${oggStart} bytes of non-Ogg data at start`);
-        }
-
-        let offset = oggStart;
-        let pageCount = 0;
-        let maxGranuleInFile = BigInt(0);
-
-        while (offset < chunk.length) {
-            const page = parseOggPage(chunk, offset);
-            if (!page) {
-                debugLog(`Failed to parse page at offset ${offset}`);
-                break;
+    if (chunks.length === 0) {
+        throw new Error('No chunks provided');
             }
 
-            debugLog(
-                `Page ${pageCount}: seq=${page.pageSequence}, granule=${page.granulePosition}, size=${page.pageSize}, headerType=${page.headerType}`,
-            );
+    // First chunk - prepare it
+    const { prepared, meta } = prepareForConcat(chunks[0]);
 
-            // Track the maximum granule position in this file
-            if (
-                page.granulePosition >= BigInt(0) &&
-                page.granulePosition > maxGranuleInFile
-            ) {
-                maxGranuleInFile = page.granulePosition;
-            }
-
-            let newGranule: bigint | null = null;
-
-            // First file: keep OpusHead (page 0), skip original OpusTags, add our own
-            if (chunkIndex === 0) {
-                // Capture serial number from first file's first page
-                if (serialNumber === -Infinity) {
-                    serialNumber = page.serialNumber;
-                    debugLog(`Using serial number: ${serialNumber}`);
-                }
-
-                // Keep OpusHead page as-is
-                if (pageCount === 0) {
-                    const opusHeadPage = chunk.slice(offset, offset + page.pageSize);
-                    pages.push(opusHeadPage);
-                    debugLog(`  -> Added OpusHead as-is as global page ${globalPageSequence}`);
-                    globalPageSequence++;
-
-                    // Add minimal OpusTags page right after OpusHead
-                    const opusTagsPage = createMinimalOpusTagsPage(
-                        serialNumber,
-                        globalPageSequence,
-                    );
-                    pages.push(opusTagsPage);
-                    debugLog(`  -> Added minimal OpusTags as global page ${globalPageSequence}`);
-                    globalPageSequence++;
-
-                    pageCount++;
-                    offset += page.pageSize;
-                    continue;
-                }
-
-                // Skip original OpusTags page
-                if (pageCount === 1) {
-                    debugLog(`  -> Skipping original OpusTags page`);
-                    pageCount++;
-                    offset += page.pageSize;
-                    continue;
-                }
-            } else {
-                // Skip first two pages (headers) from subsequent files
-                if (pageCount < 2) {
-                    debugLog(`  -> Skipping header page`);
-                    pageCount++;
-                    offset += page.pageSize;
-                    continue;
-                }
-
-                // Adjust granule position
-                if (page.granulePosition >= BigInt(0)) {
-                    newGranule = page.granulePosition + cumulativeGranule;
-                    debugLog(
-                        `  -> Adjusted granule: ${page.granulePosition} + ${cumulativeGranule} = ${newGranule}`,
-                    );
-                }
-            }
-
-            // Add remaining pages with updated serial number, sequence, and granule
-            const newPage = updatePage(
-                chunk,
-                offset,
-                serialNumber,
-                globalPageSequence,
-                newGranule,
-            );
-            if (newPage) {
-                pages.push(newPage);
-                if (page.headerType & 0x04) {
-                    debugLog(
-                        `  -> Added as global page ${globalPageSequence} (EOS flag cleared)`,
-                    );
-                } else {
-                    debugLog(`  -> Added as global page ${globalPageSequence}`);
-                }
-                globalPageSequence++;
-            }
-
-            offset += page.pageSize;
-            pageCount++;
-        }
-
-        debugLog(`Max granule in file: ${maxGranuleInFile}`);
-        cumulativeGranule += maxGranuleInFile;
-        debugLog(`Cumulative granule after file: ${cumulativeGranule}`);
+    if (chunks.length === 1) {
+        return prepared;
     }
 
-    // Combine all pages
-    const totalSize = pages.reduce((sum, page) => sum + page.length, 0);
-    debugLog(
-        `\n=== Final output: ${pages.length} pages, ${totalSize} bytes ===`,
-    );
-
-    const result = new Uint8Array(totalSize);
-    let resultOffset = 0;
-    for (const page of pages) {
-        result.set(page, resultOffset);
-        resultOffset += page.length;
-    }
+    // Remaining chunks - add them
+    const { result } = addToAcc(prepared, chunks.slice(1), meta);
 
     return result;
 };
@@ -501,6 +376,95 @@ export const prepareForConcat = (
             lastPageSequence: newPageSequence - 1,
             cumulativeGranule: maxGranule,
             totalSize: prepared.length
+        }
+    };
+};
+/**
+ *  Append new chunks to an existing accumulator
+ * @param acc File to append to
+ * @param chunks additional chunks to append, `.opus` (opus-in-ogg) files
+ * @param accMeta Metadata about the current accumulator state
+ * @returns Updated accumulator (concatenated Opus file ready for further appending) and metadata for next append
+ */
+export const addToAcc = (
+    acc: Uint8Array,
+    chunks: Uint8Array[],
+    accMeta: AppendMeta
+): { result: Uint8Array; meta: AppendMeta } => {
+    const pages: Uint8Array[] = [];
+    let globalPageSequence = accMeta.lastPageSequence + 1;
+    let cumulativeGranule = accMeta.cumulativeGranule;
+
+    for (const chunk of chunks) {
+        const oggStart = findOggStart(chunk);
+        if (oggStart === -1) {
+            debugLog('ERROR: No Ogg data found in chunk');
+            continue;
+        }
+
+        let offset = oggStart;
+        let pageCount = 0;
+        let maxGranuleInChunk = BigInt(0);
+
+        while (offset < chunk.length) {
+            const page = parseOggPage(chunk, offset);
+            if (!page) break;
+
+            // Skip header pages (OpusHead and OpusTags)
+            if (pageCount < 2) {
+                pageCount++;
+                offset += page.pageSize;
+                continue;
+            }
+
+            if (page.granulePosition >= BigInt(0) && page.granulePosition > maxGranuleInChunk) {
+                maxGranuleInChunk = page.granulePosition;
+            }
+
+            // Adjust granule position
+            let newGranule: bigint | null = null;
+            if (page.granulePosition >= BigInt(0)) {
+                newGranule = page.granulePosition + cumulativeGranule;
+            }
+
+            const newPage = updatePage(
+                chunk,
+                offset,
+                accMeta.serialNumber,
+                globalPageSequence,
+                newGranule
+            );
+
+            if (newPage) {
+                pages.push(newPage);
+                globalPageSequence++;
+            }
+
+            offset += page.pageSize;
+            pageCount++;
+        }
+
+        cumulativeGranule += maxGranuleInChunk;
+    }
+
+    // Combine accumulator + new pages
+    const newPagesSize = pages.reduce((sum, page) => sum + page.length, 0);
+    const result = new Uint8Array(acc.length + newPagesSize);
+    result.set(acc, 0);
+
+    let resultOffset = acc.length;
+    for (const page of pages) {
+        result.set(page, resultOffset);
+        resultOffset += page.length;
+    }
+
+    return {
+        result,
+        meta: {
+            serialNumber: accMeta.serialNumber,
+            lastPageSequence: globalPageSequence - 1,
+            cumulativeGranule,
+            totalSize: result.length
         }
     };
 };
