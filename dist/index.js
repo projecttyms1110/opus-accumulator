@@ -34,7 +34,7 @@ export const prepareForConcat = (data) => {
     // Disassemble (auto-detects format)
     const stream = disassembleOpusFile(data);
     // Assemble into clean Ogg with headers
-    const prepared = assembleOgg(stream, { includeHeaders: true });
+    const { data: prepared } = assembleOgg(stream, { includeHeaders: true });
     // Extract metadata from the prepared file
     const oggStart = findOggStart(prepared);
     let offset = oggStart;
@@ -78,7 +78,7 @@ export const addToAcc = (acc, chunks, accMeta) => {
         // Disassemble chunk (auto-detects format)
         const stream = disassembleOpusFile(chunk);
         // Assemble into data pages only (no headers)
-        const chunkData = assembleOgg(stream, {
+        const { data: chunkData, pageCount, finalGranule } = assembleOgg(stream, {
             serialNumber: accMeta.serialNumber,
             startingSequence: pageSequence,
             startingGranule: granule,
@@ -86,17 +86,8 @@ export const addToAcc = (acc, chunks, accMeta) => {
         });
         dataPages.push(chunkData);
         // Update state
-        const totalSamples = stream.frames.reduce((sum, f) => sum + f.samples, 0);
-        granule += BigInt(totalSamples);
-        // Count pages in chunkData
-        let chunkOffset = 0;
-        while (chunkOffset < chunkData.length) {
-            const page = parseOggPage(chunkData, chunkOffset);
-            if (!page)
-                break;
-            pageSequence = page.pageSequence + 1;
-            chunkOffset += page.pageSize;
-        }
+        granule = finalGranule;
+        pageSequence += pageCount;
     }
     // Combine accumulator + new data
     const totalSize = acc.length + dataPages.reduce((sum, p) => sum + p.length, 0);

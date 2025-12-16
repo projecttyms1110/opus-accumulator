@@ -36,8 +36,9 @@ You can safely append new chunks forever. The result is always a valid, seekable
 ### Features
 
 - Zero dependencies
-- Tiny: ~3 KB minified + gzipped
+- Tiny: ~5 KB minified + gzipped
 - Works in browser and Node.js
+- **Supports both Ogg Opus and WebM Opus** - auto-detects format
 - Pure TypeScript — no WebAssembly, no native modules, no ffmpeg, no decoding
 - Efficient incremental appending without re-parsing entire files
 - ~~Battle-tested with MediaRecorder, WebRTC, WhatsApp-style voice messages~~ (not yet, to be updated)
@@ -65,6 +66,16 @@ You can safely append new chunks forever. The result is always a valid, seekable
     document.body.appendChild(audio);
   });
 </script>
+```
+
+#### Mix Ogg and WebM files
+```ts
+// Chrome gives you WebM, Firefox gives you Ogg
+const chromeChunk = new Uint8Array(...); // WebM
+const firefoxChunk = new Uint8Array(...); // Ogg
+
+// Just concatenate them - format is auto-detected!
+const merged = await concatenateOpusFiles([chromeChunk, firefoxChunk]);
 ```
 
 #### Efficient incremental appending

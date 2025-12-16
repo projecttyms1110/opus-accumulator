@@ -11,12 +11,15 @@ export const assembleOgg = (stream, options) => {
     let pageSequence = options?.startingSequence ?? 0;
     let granule = options?.startingGranule ?? BigInt(0);
     const pages = [];
+    let pageCount = 0;
     // Add headers if requested
     if (includeHeaders) {
         pages.push(createOpusHeadPage(serialNumber, stream.channels, stream.preskip, stream.sampleRate));
         pageSequence++;
+        pageCount++;
         pages.push(createMinimalOpusTagsPage(serialNumber, pageSequence));
         pageSequence++;
+        pageCount++;
     }
     // Add data pages
     const MAX_PAGE_SIZE = 4000;
@@ -42,6 +45,7 @@ export const assembleOgg = (stream, options) => {
             });
             pages.push(page);
             pageSequence++;
+            pageCount++;
             currentPageData = [];
             currentPageSize = 0;
             currentPageSamples = 0;
@@ -67,14 +71,15 @@ export const assembleOgg = (stream, options) => {
             body: pageBody,
         });
         pages.push(page);
+        pageCount++;
     }
     // Combine pages
     const totalSize = pages.reduce((sum, p) => sum + p.length, 0);
-    const result = new Uint8Array(totalSize);
+    const data = new Uint8Array(totalSize);
     let resultOffset = 0;
     for (const page of pages) {
-        result.set(page, resultOffset);
+        data.set(page, resultOffset);
         resultOffset += page.length;
     }
-    return result;
+    return { data, pageCount, finalGranule: granule };
 };

@@ -10,4 +10,8 @@ export declare const assembleOgg: (stream: OpusStream, options?: {
     startingSequence?: number;
     startingGranule?: bigint;
     includeHeaders?: boolean;
-}) => Uint8Array;
+}) => {
+    data: Uint8Array;
+    pageCount: number;
+    finalGranule: bigint;
+};

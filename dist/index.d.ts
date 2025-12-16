@@ -5,7 +5,7 @@ export declare const setCustomDebugLogger: (logger: (...args: any[]) => void) =>
  * Adjusts page headers, granule positions, and replaces OpusTags.
  */
 export declare const concatenateOpusFiles: (chunks: Uint8Array[]) => Promise<Uint8Array>;
-interface AppendMeta {
+export interface AppendMeta {
     serialNumber: number;
     lastPageSequence: number;
     cumulativeGranule: bigint;
@@ -31,4 +31,3 @@ export declare const addToAcc: (acc: Uint8Array, chunks: Uint8Array[], accMeta: 
     result: Uint8Array;
     meta: AppendMeta;
 };
-export {};
