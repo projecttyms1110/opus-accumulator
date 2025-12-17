@@ -11,6 +11,8 @@ export const setCustomDebugLogger = (logger: (...args: any[]) => void) => {
     debug.customLogger = logger;
 };
 
+const log = debug.debugLog
+
 /**
  * Concatenate multiple Opus-in-Ogg or Opus-in-WebM files into a single logical bitstream.
  * Adjusts page headers, granule positions, and replaces OpusTags.

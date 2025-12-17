@@ -35,6 +35,6 @@
   "license": "0BSD",
   "author": "Chamie",
   "type": "module",
-  "repository": "https://github.com/chamie/ogg-opus-concat",
-  "bugs": "https://github.com/chamie/ogg-opus-concat/issues"
+  "repository": "https://github.com/chamie/opus-accumulator",
+  "bugs": "https://github.com/chamie/opus-accumulator/issues"
 }

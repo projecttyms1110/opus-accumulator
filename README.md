@@ -295,6 +295,28 @@ interface AccumulatorState {
 }
 ```
 
+## Troubleshooting
+
+### "No Ogg data found" error
+Your input file might have metadata before the Ogg stream (ID3 tags, etc.). This library automatically skips such data, but if the error persists, the file may not be a valid Opus container.
+
+### "Unknown audio format" error
+The library supports Ogg Opus (`.opus`) and WebM Opus (`.webm`) containers. If you're getting this error:
+- Check that your file is actually Opus-encoded (not AAC, MP3, etc.)
+- Safari's MediaRecorder outputs AAC in MP4 - use `opus-media-recorder` polyfill first
+
+### Debugging
+Enable debug logging to see what's happening:
+````ts
+import { setDebug } from "opus-accumulator";
+setDebug(true);
+````
+you can also provide your own custom logger by using `setCustomDebugLogger`
+```ts
+import { setCustomDebugLogger } from "opus-accumulator";
+setCustomDebugLogger((...args: any) => console.debug(...args));
+```
+
 
 ### License
 
