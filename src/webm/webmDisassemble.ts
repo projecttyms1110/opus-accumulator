@@ -2,9 +2,14 @@ import { OpusFrame, OpusStream } from "../types/opus";
 import { WebMFrame } from "./webM";
 import { EBML_IDS } from "./matroskaTypes";
 import { parseBlock, readElementSize, readVINT } from "./webmParse";
+import debug from "../common/debugger";
+
+const { debugLog } = debug;
 
 export const disassembleWebM = (data: Uint8Array): OpusStream => {
+    debugLog('Extracting WebM frames');
     const webmFrames = extractWebMFrames(data);
+    debugLog(`Extracted ${webmFrames.length} WebM frames`);
 
     // Extract codec info from WebM (simplified - assume defaults)
     const channels = 2;
@@ -17,6 +22,8 @@ export const disassembleWebM = (data: Uint8Array): OpusStream => {
         samples: samplesPerFrame, // WebM doesn't store this, assume 20ms frames
     }));
 
+    debugLog(`Converted to ${frames.length} Opus frames`);
+    debugLog(`Returning Opus stream with channels=${channels}, preskip=${preskip}, sampleRate=${sampleRate}`);
     return {
         frames,
         channels,

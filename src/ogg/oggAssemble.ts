@@ -1,5 +1,8 @@
 import { OpusStream } from "../types/opus";
 import { createMinimalOpusTagsPage, createOggPage, createOpusHeadPage } from "./oggWrite";
+import debug from "../common/debugger";
+
+const { debugLog } = debug;
 
 /**
  * Assemble frames into appendable Ogg Opus file
@@ -23,13 +26,19 @@ export const assembleOgg = (stream: OpusStream, options?: {
 
     // Add headers if requested
     if (includeHeaders) {
+        debugLog(`Creating OpusHead: serial=${serialNumber}, channels=${stream.channels}, preskip=${stream.preskip}, sampleRate=${stream.sampleRate}`);
+
         pages.push(createOpusHeadPage(serialNumber, stream.channels, stream.preskip, stream.sampleRate));
         pageSequence++;
         pageCount++;
 
+        debugLog(`Creating minimal OpusTags: sequence=${pageSequence}`);
+
         pages.push(createMinimalOpusTagsPage(serialNumber, pageSequence));
         pageSequence++;
         pageCount++;
+    } else {
+        debugLog(`Assembling data pages only (no headers), starting at sequence=${pageSequence}, granule=${granule}`);
     }
 
     // Add data pages
@@ -42,6 +51,9 @@ export const assembleOgg = (stream: OpusStream, options?: {
         // Flush page if needed
         if (currentPageSize + frame.data.length > MAX_PAGE_SIZE && currentPageData.length > 0) {
             const pageBody = new Uint8Array(currentPageSize);
+
+            debugLog(`Flushing page: sequence=${pageSequence}, granule=${granule}, size=${pageBody.length}, packets=${currentPageData.length}`);
+
             let offset = 0;
             for (const d of currentPageData) {
                 pageBody.set(d, offset);
@@ -104,5 +116,7 @@ export const assembleOgg = (stream: OpusStream, options?: {
         resultOffset += page.length;
     }
 
+    debugLog(`Assembled ${pageCount} pages, final granule: ${granule}, total size: ${data.length} bytes`);
+    
     return { data, pageCount, finalGranule: granule };
 };
