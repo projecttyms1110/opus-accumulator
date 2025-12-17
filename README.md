@@ -41,6 +41,18 @@ A **third option**:
 * **Supports both Ogg Opus and WebM Opus** - auto-detects container format
 * Produces a valid `.opus` file at every step
 
+## Why "accumulator"?
+
+The term **accumulator** emphasizes that this library maintains a **growing file with persistent state**.
+
+Unlike traditional concatenation (which processes everything at once), an accumulator:
+- Grows incrementally
+- Preserves previous state
+- Allows resumable operations
+- Works with streaming data
+
+This matches functional programming patterns (like `Array.reduce()`) where an accumulator value is built up over multiple iterations.
+
 ## The accumulator file concept
 
 This library revolves around the idea of an **accumulator file**.
@@ -58,6 +70,7 @@ This enables a clean separation of concerns:
 * The server only ever needs to support *“append more bytes”*
 
 No Opus parsing or audio knowledge is required on the backend.
+
 
 ## Typical workflow
 
