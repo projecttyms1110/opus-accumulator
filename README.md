@@ -1,62 +1,181 @@
-# ogg-opus-concat
+# opus-accumulator
 
-**Concatenate multiple Opus-in-Ogg files into a single valid .opus stream — instantly, without re-encoding.**
+**Incrementally append Opus audio chunks into a valid `.opus` file — without FFmpeg, WASM, or re-encoding.**
 
-Perfect for **MediaRecorder**, WebRTC recordings, voice messages, or any app that receives audio in chunks.
-```ts
-import { concatenateOpusFiles } from "ogg-opus-concat";
+This library allows you to **append new Ogg/Opus chunks to an existing `.opus` file in an append-only way**, preserving all existing bytes. It also creates one if you don't have any.
+The output file remains **valid and playable after every append**.
 
-const merged = await concatenateOpusFiles([chunk1, chunk2, chunk3]);
-// → Uint8Array ready to play or save as .opus
+It is designed for **browser-based, offline-first, incremental audio recording** workflows.
+
+## Why this exists
+
+Recording audio in the browser usually produces **multiple Opus chunks** (e.g. via `MediaRecorder` or WebRTC). Joining those chunks correctly is surprisingly hard.
+
+### The usual options are bad
+
+#### ❌ ffmpeg.wasm
+
+* ~33MB download
+* Requires WASM support and bundler configuration
+* Massive overkill for simple container-level operations
+* Poor UX on mobile and offline-first apps
+
+#### ❌ Server-side concatenation
+
+* Requires network round-trips per chunk
+* Breaks offline recording
+* Couples recording reliability to network reliability
+* Adds infra, latency, and failure modes
+
+### ✅ What this library enables
+
+A **third option**:
+
+* ~3KB dowsload
+* Pure JavaScript / TypeScript
+* No dependencies
+* No WASM
+* No decoding or re-encoding
+* Works incrementally
+* Works offline
+* **Supports both Ogg Opus and WebM Opus** - auto-detects container format
+* Produces a valid `.opus` file at every step
+
+## The accumulator file concept
+
+This library revolves around the idea of an **accumulator file**.
+
+An accumulator file is a valid `.opus` file that **grows over time**.
+
+* New Opus chunks are appended to the end
+* Existing bytes are never modified
+* The file remains playable after every append
+
+This enables a clean separation of concerns:
+
+* **Recording** can happen independently
+* **Uploading / syncing** can be a background process
+* The server only ever needs to support *“append more bytes”*
+
+No Opus parsing or audio knowledge is required on the backend.
+
+## Typical workflow
+
+1. The browser records audio in Opus chunks (`.opus` or `.webm`, depending on browser)
+2. Each chunk is appended to a local accumulator `.opus` file
+3. The file is always valid and playable
+4. A background sync uploads only the newly appended bytes
+5. Uploads can be resumed by continuing to append
+
+Recording does **not** depend on network availability.
+
+## Performance model
+
+This library supports a **stateful append mode**.
+
+If you persist the accumulator state (page sequence numbers, granule position, etc.,
+see `AccumulatorState` type), subsequent appends do **not** require re-reading or
+re-parsing the existing output file.
+
+Appending new chunks is proportional only to the size of the new data.
+
+## Guarantees
+
+This library guarantees:
+
+* No re-encoding
+* No decoding
+* Append-only output
+* Existing bytes of the accumulator are never modified
+* Output is a valid `.opus` file after every append
+* Append cost is proportional to the size of the new chunk
+* No quadratic behavior for long recordings
+
+
+## What this library actually does
+
+Ogg/Opus files are not safely concatenable by naive byte appending.
+Each chunk contains headers, page sequence numbers, granule positions, and checksums.
+
+This library:
+
+* Extracts raw Opus frames from Ogg/Opus and WebM containers
+* Normalizes them into a single Ogg/Opus stream
+* Removes redundant headers
+* Renumbers Ogg page sequences
+* Adjusts granule positions
+* Clears EOS flags
+* Recomputes CRCs
+
+All without touching the encoded audio data itself.
+
+## Installation
+
+```sh
+npm install opus-accumulator
 ```
 
-### Why this exists
+## Usage
 
-`MediaRecorder` (and many streaming audio sources) emits **self-contained Ogg/Opus files** on every `ondataavailable`.  
-Each chunk has its own headers (OpusHead + OpusTags), sequence numbers, and checksums.
-Well, Chrome gives you WebM with Opus inside and Safari doesn't give you anything but mp4, but the common ground is often Opus,
-natively or through some libs. And that's especially useful as with '.opus' files' native Ogg format you can add frames by just
-appending them to the end of the file, without re-writing anything.
+### Appending to accumulator
 
-Yet simply appending the files together → **corrupted file** (wrong sequence numbers, duplicate headers, invalid checksums,
-"playlist" file with many files inside) that could only be played/processed successfully if you're lucky with your tools.
+```ts
+import { prepareAccumulator, appendToAccumulator } from "opus-accumulator";
 
-This package fixes all of that **in pure TypeScript**:
-- Keeps the first file's headers intact
-- Strips duplicate OpusHead/OpusTags from subsequent chunks
-- Rewrites page sequence numbers and serial numbers
-- Adjusts granule positions so playback is seamless
-- Recalculates every page CRC32
-- Clears EOS flags for append-only compatibility
-- Skips non-Ogg junk data (ID3 tags, EXIF, etc.)
-- **Never re-encodes audio** — 100% lossless
+// Load or create your initial recording
+let recordingFile = await loadExistingRecording(); // Uint8Array
 
-You can safely append new chunks forever. The result is always a valid, seekable, gapless `.opus` file.
+// Prepare it once for efficient appending
+let { result, meta } = prepareAccumulator(recordingFile);
+recordingFile = result; // Use the prepared version
+                        // still a valid playable file
 
-### Features
+// Recording loop - append chunks as they arrive
+mediaRecorder.ondataavailable = async (event) => {
+  const chunk = new Uint8Array(await event.data.arrayBuffer());
+  
+  // Efficiently append without re-parsing the entire file
+  const { result, meta: newMeta } = appendToAccumulator(recordingFile, [chunk], meta);
+  
+  recordingFile = result;
+  meta = newMeta;
+  
+  // Optionally save to disk/IndexedDB
+  await saveRecording(recordingFile);
+};
+```
 
-- Zero dependencies
-- Tiny: ~5 KB minified + gzipped
-- Works in browser and Node.js
-- **Supports both Ogg Opus and WebM Opus** - auto-detects format
-- Pure TypeScript — no WebAssembly, no native modules, no ffmpeg, no decoding
-- Efficient incremental appending without re-parsing entire files
-- ~~Battle-tested with MediaRecorder, WebRTC, WhatsApp-style voice messages~~ (not yet, to be updated)
+The returned `accumulator` can be:
 
-### Usage
+* played immediately
+* saved locally
+* partially uploaded
+* resumed later
 
-#### Basic concatenation
+The server only ever receives **“append these bytes”**.
+And if your back-end doesn't support a method like this,
+you can still upload the entire file, of course.
+
+### Just combine some Opus files
+```ts
+import { concatChunks } from "opus-accumulator";
+
+const recordedChunks: Uint8Array[] = getRecordedChunks(); // Could be a mix of `.opus` and `.webm` audio-only files encoded with Opus codec
+
+const result = concatChunks(recordedChunks);
+```
+
 ```html
 <input type="file" multiple accept=".opus,audio/ogg" id="files">
 <script type="module">
-  import { concatenateOpusFiles } from "https://cdn.skypack.dev/ogg-opus-concat";
+  import { concatChunks } from "https://cdn.skypack.dev/opus-accumulator";
 
   document.getElementById("files").addEventListener("change", async e => {
     const buffers = await Promise.all(
       Array.from(e.target.files).map(f => f.arrayBuffer().then(b => new Uint8Array(b)))
     );
 
-    const result = await concatenateOpusFiles(buffers);
+    const result = await concatChunks(buffers);
 
     const blob = new Blob([result], { type: "audio/opus" });
     const url = URL.createObjectURL(blob);
@@ -68,103 +187,90 @@ You can safely append new chunks forever. The result is always a valid, seekable
 </script>
 ```
 
-#### Mix Ogg and WebM files
-```ts
-// Chrome gives you WebM, Firefox gives you Ogg
-const chromeChunk = new Uint8Array(...); // WebM
-const firefoxChunk = new Uint8Array(...); // Ogg
+## Use cases
 
-// Just concatenate them - format is auto-detected!
-const merged = await concatenateOpusFiles([chromeChunk, firefoxChunk]);
-```
+This library is useful if you are building:
 
-#### Efficient incremental appending
-Perfect for live recording scenarios where you want to append chunks without re-processing the entire file:
-```ts
-import { prepareForConcat, addToAcc } from "ogg-opus-concat";
+* Browser-based voice recorders
+* Offline-first PWAs
+* Voice notes or messaging apps
+* Interview or podcast capture tools
+* Accessibility or assistive recording tools
+* Field reporting or journaling apps
 
-// Load or create your initial recording
-let recordingFile = await loadExistingRecording(); // Uint8Array
+Especially when:
 
-// Prepare it once for efficient appending
-let { prepared, meta } = prepareForConcat(recordingFile);
-recordingFile = prepared; // Use the prepared version
+* bundle size matters
+* WASM is undesirable
+* network reliability cannot be assumed
 
-// Recording loop - append chunks as they arrive
-mediaRecorder.ondataavailable = async (event) => {
-  const chunk = new Uint8Array(await event.data.arrayBuffer());
-  
-  // Efficiently append without re-parsing the entire file
-  const { result, meta: newMeta } = addToAcc(recordingFile, [chunk], meta);
-  
-  recordingFile = result;
-  meta = newMeta;
-  
-  // Optionally save to disk/IndexedDB
-  await saveRecording(recordingFile);
-};
-```
+## Non-goals
 
-**Why this matters:**
-- `prepareForConcat()` parses the file once, extracts metadata, clears EOS flags, and replaces OpusTags
-- `addToAcc()` only processes new chunks — no need to re-parse the accumulator file
-- Perfect for append-only architectures where sync and recording are separate threads
-- Scales to recordings of any length (hours+) without performance degradation
+This library does **not**:
 
-### Live Demo
+* Decode audio
+* Encode audio
+* Edit or transform audio
+* Replace FFmpeg for general media processing
 
-~~https://chamie.github.io/ogg-opus-concat-demo~~ (TBD)
+It solves one specific problem: **incremental, append-only Opus concatenation**.
 
-### Install
-```bash
-npm install ogg-opus-concat
-```
-```ts
-import { concatenateOpusFiles, prepareForConcat, addToAcc } from "ogg-opus-concat";
-```
+## Cross-browser MediaRecorder support
 
-### API
+Browsers produce Opus audio in different containers:
 
-#### `concatenateOpusFiles(chunks: Uint8Array[]): Promise<Uint8Array>`
+| Browser       | MediaRecorder output (codec/container) | Supported |
+|---------------|----------------------|-----------|
+| Firefox       | `.opus` (Opus/Ogg)   | ✅ |
+| Chrome / Edge | `.webm` (Opus/WebM)  | ✅ |
+| Safari        | `.aac` (AAC/MP4)     | ❌ |
 
-Takes an array of Opus-in-Ogg file buffers and returns a single concatenated buffer containing a valid
-Ogg file with all the Opus frames inside.
+This library accepts **both Opus formats**.
+For Safari you can use other helper libraries like `opus-media-recorder` to produce Opus chunks first.
+
+It extracts the encoded Opus frames directly from either container and appends them into a single **Ogg/Opus (`.opus`) accumulator file** — without decoding or re-encoding.
+The Opus audio data is copied bit-for-bit. Only container metadata is rewritten.
+
+## API
+
+### `concatChunks(chunks: Uint8Array[]): Promise<Uint8Array>`
+
+Takes an array of Opus (Ogg and WebM containers) file buffers and returns a single concatenated buffer containing a valid Ogg file with all the Opus frames inside.
 
 **Example:**
 ```ts
-const merged = await concatenateOpusFiles([chunk1, chunk2, chunk3]);
+const merged = await concatChunks([chunk1, chunk2, chunk3]);
 ```
 
 ---
 
-#### `prepareForConcat(file: Uint8Array): { prepared: Uint8Array; meta: AppendMeta }`
+### `prepareAccumulator(file: Uint8Array): { result: Uint8Array; meta: AccumulatorState }`
 
 Prepares an existing Opus file for efficient incremental appending. This function:
 - Clears all EOS (End of Stream) flags
 - Replaces OpusTags with a minimal version (removes duration metadata)
-- Renumbers all page sequences to be continuous
-- Returns metadata needed for `addToAcc()`
+- Returns metadata needed for `appendToAccumulator()`
 
 **Returns:**
-- `prepared`: The prepared file ready for appending
+- `result`: The prepared file ready for appending to it. Valid playable Opus file.
 - `meta`: Metadata object containing `{ serialNumber, lastPageSequence, cumulativeGranule, totalSize }`
 
 **Example:**
 ```ts
 const existingFile = await loadFile('recording.opus');
-const { prepared, meta } = prepareForConcat(existingFile);
+const { result, meta } = prepareAccumulator(existingFile);
 ```
 
 ---
 
-#### `addToAcc(acc: Uint8Array, chunks: Uint8Array[], accMeta: AppendMeta): { result: Uint8Array; meta: AppendMeta }`
+### `appendToAccumulator(acc: Uint8Array, chunks: Uint8Array[], accMeta: AccumulatorState): { result: Uint8Array; meta: AccumulatorState }`
 
 Efficiently appends new chunks to an accumulator file without re-parsing it.
 
 **Parameters:**
-- `acc`: The accumulator file (output from `prepareForConcat()` or previous `addToAcc()`)
+- `acc`: The accumulator file (output from `prepareAccumulator()` or previous `appendToAccumulator()`)
 - `chunks`: Array of new Opus chunks to append
-- `accMeta`: Metadata from `prepareForConcat()` or previous `addToAcc()`
+- `accMeta`: Metadata from `prepareAccumulator()` or previous `appendToAccumulator()`
 
 **Returns:**
 - `result`: The new concatenated file
@@ -172,16 +278,16 @@ Efficiently appends new chunks to an accumulator file without re-parsing it.
 
 **Example:**
 ```ts
-let { result, meta } = addToAcc(prepared, [newChunk1, newChunk2], meta);
+let { result, meta } = appendToAccumulator(prepared, [newChunk1, newChunk2], meta);
 // Keep appending more chunks
-({ result, meta } = addToAcc(result, [newChunk3], meta));
+({ result, meta } = appendToAccumulator(result, [newChunk3], meta));
 ```
 
 ---
 
-#### `AppendMeta` interface
+### `AccumulatorState` interface
 ```ts
-interface AppendMeta {
+interface AccumulatorState {
   serialNumber: number;      // Ogg stream serial number
   lastPageSequence: number;  // Last page sequence number in file
   cumulativeGranule: bigint; // Total granule position (duration in 48kHz samples)

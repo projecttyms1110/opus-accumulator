@@ -15,27 +15,27 @@ export const setCustomDebugLogger = (logger: (...args: any[]) => void) => {
  * Concatenate multiple Opus-in-Ogg or Opus-in-WebM files into a single logical bitstream.
  * Adjusts page headers, granule positions, and replaces OpusTags.
  */
-export const concatenateOpusFiles = async (
+export const concatChunks = (
     chunks: Uint8Array[],
-): Promise<Uint8Array> => {
+): Uint8Array => {
     if (chunks.length === 0) {
         throw new Error('No chunks provided');
     }
 
     // First chunk - prepare it (auto-detects Ogg or WebM)
-    const { prepared, meta } = prepareForConcat(chunks[0]);
+    let { result, meta } = prepareAccumulator(chunks[0]);
 
     if (chunks.length === 1) {
-        return prepared;
+        return result;
     }
 
     // Remaining chunks - add them (auto-detects each)
-    const { result } = addToAcc(prepared, chunks.slice(1), meta);
+    ({ result } = appendToAccumulator(result, chunks.slice(1), meta));
 
     return result;
 };
 
-export interface AppendMeta {
+export interface AccumulatorState {
     serialNumber: number;
     lastPageSequence: number;
     cumulativeGranule: bigint;
@@ -47,24 +47,24 @@ export interface AppendMeta {
  * Returns the prepared file (with EOS cleared, OpusTags replaced) and metadata
  * required for concatenation of more files within the same logical bitstream.
  */
-export const prepareForConcat = (
+export const prepareAccumulator = (
     data: Uint8Array
-): { prepared: Uint8Array; meta: AppendMeta } => {
+): { result: Uint8Array; meta: AccumulatorState } => {
     // Disassemble (auto-detects format)
     const stream = disassembleOpusFile(data);
     
     // Assemble into clean Ogg with headers
-    const { data: prepared } = assembleOgg(stream, { includeHeaders: true });
+    const { data: result } = assembleOgg(stream, { includeHeaders: true });
     
     // Extract metadata from the prepared file
-    const oggStart = findOggStart(prepared);
+    const oggStart = findOggStart(result);
     let offset = oggStart;
     let lastPageSequence = 0;
     let maxGranule = BigInt(0);
     let serialNumber = stream.serialNumber ?? 0;
     
-    while (offset < prepared.length) {
-        const page = parseOggPage(prepared, offset);
+    while (offset < result.length) {
+        const page = parseOggPage(result, offset);
         if (!page) break;
         
         if (serialNumber === 0) serialNumber = page.serialNumber;
@@ -77,12 +77,12 @@ export const prepareForConcat = (
     }
     
     return {
-        prepared,
+        result,
         meta: {
             serialNumber,
             lastPageSequence,
             cumulativeGranule: maxGranule,
-            totalSize: prepared.length,
+            totalSize: result.length,
         }
     };
 };
@@ -94,11 +94,11 @@ export const prepareForConcat = (
  * @param accMeta Metadata about the current accumulator state
  * @returns Updated accumulator (concatenated Opus file ready for further appending) and metadata for next append
  */
-export const addToAcc = (
+export const appendToAccumulator = (
     acc: Uint8Array,
     chunks: Uint8Array[],
-    accMeta: AppendMeta
-): { result: Uint8Array; meta: AppendMeta } => {
+    accMeta: AccumulatorState
+): { result: Uint8Array; meta: AccumulatorState } => {
     const dataPages: Uint8Array[] = [];
     let pageSequence = accMeta.lastPageSequence + 1;
     let granule = accMeta.cumulativeGranule;
