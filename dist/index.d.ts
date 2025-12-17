@@ -4,8 +4,8 @@ declare const setCustomDebugLogger: (logger: (...args: any[]) => void) => void;
  * Concatenate multiple Opus-in-Ogg or Opus-in-WebM files into a single logical bitstream.
  * Adjusts page headers, granule positions, and replaces OpusTags.
  */
-declare const concatenateOpusFiles: (chunks: Uint8Array[]) => Promise<Uint8Array>;
-interface AppendMeta {
+declare const concatChunks: (chunks: Uint8Array[]) => Uint8Array;
+interface AccumulatorState {
     serialNumber: number;
     lastPageSequence: number;
     cumulativeGranule: bigint;
@@ -16,9 +16,9 @@ interface AppendMeta {
  * Returns the prepared file (with EOS cleared, OpusTags replaced) and metadata
  * required for concatenation of more files within the same logical bitstream.
  */
-declare const prepareForConcat: (data: Uint8Array) => {
-    prepared: Uint8Array;
-    meta: AppendMeta;
+declare const prepareAccumulator: (data: Uint8Array) => {
+    result: Uint8Array;
+    meta: AccumulatorState;
 };
 /**
  *  Append new chunks to an existing accumulator
@@ -27,9 +27,9 @@ declare const prepareForConcat: (data: Uint8Array) => {
  * @param accMeta Metadata about the current accumulator state
  * @returns Updated accumulator (concatenated Opus file ready for further appending) and metadata for next append
  */
-declare const addToAcc: (acc: Uint8Array, chunks: Uint8Array[], accMeta: AppendMeta) => {
+declare const appendToAccumulator: (acc: Uint8Array, chunks: Uint8Array[], accMeta: AccumulatorState) => {
     result: Uint8Array;
-    meta: AppendMeta;
+    meta: AccumulatorState;
 };
 
-export { type AppendMeta, addToAcc, concatenateOpusFiles, prepareForConcat, setCustomDebugLogger, setDebug };
+export { type AccumulatorState, appendToAccumulator, concatChunks, prepareAccumulator, setCustomDebugLogger, setDebug };
