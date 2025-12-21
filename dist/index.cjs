@@ -157,14 +157,17 @@ var EBML_IDS = {
   // Leaves:
   SimpleBlock: 0xA3n,
   CodecID: 0x86n,
+  ChannelCount: 0x9Fn,
+  SamplingFrequency: 0xB5n,
   TrackNumber: 0xD7n
 };
-var LACING_TYPES = {
-  NONE: 0,
-  XIPH: 1,
-  FIXED_SIZE: 2,
-  EBML: 3
-};
+var LACING_TYPES = /* @__PURE__ */ ((LACING_TYPES2) => {
+  LACING_TYPES2[LACING_TYPES2["NONE"] = 0] = "NONE";
+  LACING_TYPES2[LACING_TYPES2["XIPH"] = 1] = "XIPH";
+  LACING_TYPES2[LACING_TYPES2["FIXED_SIZE"] = 2] = "FIXED_SIZE";
+  LACING_TYPES2[LACING_TYPES2["EBML"] = 3] = "EBML";
+  return LACING_TYPES2;
+})(LACING_TYPES || {});
 
 // src/webm/webmParse.ts
 var debugLog = (...args) => debugger_default.debugLog("parser", ...args);
@@ -200,14 +203,14 @@ var decodeSignedVint = (value, width) => {
   return value - range;
 };
 var processSimpleBlock = (data, lacingType) => {
-  if (lacingType === LACING_TYPES.NONE) {
+  if (lacingType === 0 /* NONE */) {
     debugLog(`SimpleBlock with no lacing, single frame of size ${data.length} bytes`);
     return [data];
   }
   const numFrames = data[0] + 1;
   let offset = 1;
   const frameSizes = [];
-  if (lacingType === LACING_TYPES.FIXED_SIZE) {
+  if (lacingType === 2 /* FIXED_SIZE */) {
     const totalSize = data.length - 1;
     const frameSize = Math.floor(totalSize / numFrames);
     for (let i = 0; i < numFrames; i++) {
@@ -215,7 +218,7 @@ var processSimpleBlock = (data, lacingType) => {
     }
   } else {
     switch (lacingType) {
-      case LACING_TYPES.XIPH:
+      case 1 /* XIPH */:
         for (let i = 0; i < numFrames - 1; i++) {
           let size = 0;
           let byte = 255;
@@ -226,7 +229,7 @@ var processSimpleBlock = (data, lacingType) => {
           frameSizes.push(size);
         }
         break;
-      case LACING_TYPES.EBML:
+      case 3 /* EBML */:
         let { value: firstSize, size: firstSizeLen } = readVINT(data, offset);
         offset += firstSizeLen;
         frameSizes.push(Number(firstSize));
@@ -246,12 +249,12 @@ var processSimpleBlock = (data, lacingType) => {
     frameSizes.push(lastFrameSize);
   }
   const frames = [];
-  for (const fremaSize of frameSizes) {
-    const frameData = data.subarray(offset, offset + fremaSize);
+  for (const frameSize of frameSizes) {
+    const frameData = data.subarray(offset, offset + frameSize);
     frames.push(frameData);
-    offset += fremaSize;
+    offset += frameSize;
   }
-  debugLog(`SimpleBlock with lacing type ${["Xiph", "Fixed", "EBML"][lacingType - 1]}, ${numFrames} frames, sizes=[${frameSizes.join(", ")}]`);
+  debugLog(`SimpleBlock with lacing type ${LACING_TYPES[lacingType]}, ${numFrames} frames, sizes=[${frameSizes.join(", ")}]`);
   return frames;
 };
 
@@ -259,13 +262,11 @@ var processSimpleBlock = (data, lacingType) => {
 var debugLog2 = (...args) => debugger_default.debugLog("disassembler", ...args);
 var disassembleWebM = (data) => {
   debugLog2("Extracting WebM frames");
-  const webmFrames = extractFrames(data);
-  debugLog2(`Extracted ${webmFrames.length} WebM frames`);
-  const channels = 1;
+  const { frames: webMFrames, channels, sampleRate } = extractFramesAndMeta(data);
+  debugLog2(`Extracted ${webMFrames.length} WebM frames`);
   const preskip = 312;
-  const sampleRate = 48e3;
   const samplesPerFrame = 960;
-  const frames = webmFrames.map((frame) => ({
+  const frames = webMFrames.map((frame) => ({
     data: frame,
     samples: samplesPerFrame
     // WebM doesn't store this, assume 20ms frames
@@ -279,13 +280,15 @@ var disassembleWebM = (data) => {
     sampleRate
   };
 };
-var extractFrames = (buffer) => {
+var extractFramesAndMeta = (buffer) => {
   const parentEnds = [buffer.length];
   const frames = [];
   let offset = 0;
   let currentTrackEntryNo = -1;
   let opusTrackNo = -1;
   let elementsCount = 0;
+  let channels = 0;
+  let sampleRate = 0;
   while (parentEnds.length > 0) {
     elementsCount++;
     const currentEnd = parentEnds[parentEnds.length - 1];
@@ -324,6 +327,26 @@ var extractFrames = (buffer) => {
         offset = dataEnd;
         debugLog2(`Processed CodecID: ${codec} for TrackEntry number: ${currentTrackEntryNo}`);
         break;
+      case EBML_IDS.ChannelCount:
+        if (currentTrackEntryNo !== opusTrackNo) {
+          offset = dataEnd;
+          debugLog2(`Skipping ChannelCount for non-Opus TrackEntry number: ${currentTrackEntryNo}`);
+          break;
+        }
+        channels = Number(readVINT(buffer, dataStart).value);
+        offset = dataEnd;
+        debugLog2(`Processed ChannelCount: ${channels} for TrackEntry number: ${currentTrackEntryNo}`);
+        break;
+      case EBML_IDS.SamplingFrequency:
+        if (currentTrackEntryNo !== opusTrackNo) {
+          offset = dataEnd;
+          debugLog2(`Skipping SamplingFrequency for non-Opus TrackEntry number: ${currentTrackEntryNo}`);
+          break;
+        }
+        sampleRate = Number(readVINT(buffer, dataStart).value);
+        offset = dataEnd;
+        debugLog2(`Processed SamplingFrequency: ${sampleRate} for TrackEntry number: ${currentTrackEntryNo}`);
+        break;
       case EBML_IDS.SimpleBlock:
         debugLog2(`Processing SimpleBlock at offset ${dataStart}`);
         if (opusTrackNo === -1) {
@@ -356,7 +379,7 @@ var extractFrames = (buffer) => {
     }
   }
   debugLog2(`Total elements processed: ${elementsCount}`);
-  return frames;
+  return { frames, channels, sampleRate };
 };
 
 // src/common/audioTypes.ts

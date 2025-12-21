@@ -1,22 +1,20 @@
 import { OpusFrame, OpusStream } from "../types/opus";
 import { EBML_IDS } from "./EBMLTypes";
-import { decodeString,  processSimpleBlock, readId, readVINT } from "./webmParse";
+import { decodeString, processSimpleBlock, readId, readVINT } from "./webmParse";
 import debug from "../common/debugger";
 
 const debugLog = (...args: any[]) => debug.debugLog('disassembler', ...args);
 
 export const disassembleWebM = (data: Uint8Array): OpusStream => {
     debugLog('Extracting WebM frames');
-    const webmFrames = extractFrames(data);
-    debugLog(`Extracted ${webmFrames.length} WebM frames`);
+    const { frames: webMFrames, channels, sampleRate } = extractFramesAndMeta(data);
+    debugLog(`Extracted ${webMFrames.length} WebM frames`);
 
     // Extract codec info from WebM (simplified - assume defaults)
-    const channels = 1; // Mono
     const preskip = 312;
-    const sampleRate = 48000;
     const samplesPerFrame = 960; // 20ms at 48kHz
 
-    const frames: OpusFrame[] = webmFrames.map(frame => ({
+    const frames: OpusFrame[] = webMFrames.map(frame => ({
         data: frame,
         samples: samplesPerFrame, // WebM doesn't store this, assume 20ms frames
     }));
@@ -34,13 +32,15 @@ export const disassembleWebM = (data: Uint8Array): OpusStream => {
 /**
  * Extract Opus frames from a WebM/Matroska file
  */
-export const extractFrames = (buffer: Uint8Array): Uint8Array[] => {
+export const extractFramesAndMeta = (buffer: Uint8Array): { frames: Uint8Array[], channels: number, sampleRate: number } => {
     const parentEnds = [buffer.length];
     const frames: Uint8Array[] = [];
     let offset = 0;
     let currentTrackEntryNo = -1;
     let opusTrackNo = -1;
     let elementsCount = 0;
+    let channels = 0;
+    let sampleRate = 0;
 
     while (parentEnds.length > 0) {
         elementsCount++;
@@ -99,6 +99,29 @@ export const extractFrames = (buffer: Uint8Array): Uint8Array[] => {
                 debugLog(`Processed CodecID: ${codec} for TrackEntry number: ${currentTrackEntryNo}`);
                 break;
 
+            case EBML_IDS.ChannelCount:
+                if (currentTrackEntryNo !== opusTrackNo) {
+                    offset = dataEnd;
+                    debugLog(`Skipping ChannelCount for non-Opus TrackEntry number: ${currentTrackEntryNo}`);
+                    break;
+                }
+                channels = Number(readVINT(buffer, dataStart).value);
+                offset = dataEnd;
+                debugLog(`Processed ChannelCount: ${channels} for TrackEntry number: ${currentTrackEntryNo}`);
+                break;
+
+            case EBML_IDS.SamplingFrequency:
+                if (currentTrackEntryNo !== opusTrackNo) {
+                    offset = dataEnd;
+
+                    debugLog(`Skipping SamplingFrequency for non-Opus TrackEntry number: ${currentTrackEntryNo}`);
+                    break;
+                }
+                sampleRate = Number(readVINT(buffer, dataStart).value);
+                offset = dataEnd;
+                debugLog(`Processed SamplingFrequency: ${sampleRate} for TrackEntry number: ${currentTrackEntryNo}`);
+                break;
+
             case EBML_IDS.SimpleBlock:
                 // Process SimpleBlock frame (extract if Opus frames)
                 debugLog(`Processing SimpleBlock at offset ${dataStart}`);
@@ -130,9 +153,10 @@ export const extractFrames = (buffer: Uint8Array): Uint8Array[] => {
                 frames.push(...newFrames);
                 offset = dataEnd;
                 break;
+
             // --- ANYTHING ELSE (Skip) ---
             default:
-                    debugLog(`Skipping unrecognized element ID 0x${id.value.toString(16)} at offset ${offset}, size=${elementSize.value}${elementSize.isUnknown ? ' (unknown size)' : ''}`);
+                debugLog(`Skipping unrecognized element ID 0x${id.value.toString(16)} at offset ${offset}, size=${elementSize.value}${elementSize.isUnknown ? ' (unknown size)' : ''}`);
                 if (elementSize.isUnknown) {
                     // If we hit an unknown-sized element we don't recognize, 
                     // we are forced to treat it as a container to look for IDs we DO know.
@@ -146,5 +170,5 @@ export const extractFrames = (buffer: Uint8Array): Uint8Array[] => {
 
     debugLog(`Total elements processed: ${elementsCount}`);
 
-    return frames;
+    return { frames, channels, sampleRate };
 }

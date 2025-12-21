@@ -110,10 +110,10 @@ export const processSimpleBlock = (data: Uint8Array, lacingType: number): Uint8A
         frameSizes.push(lastFrameSize);
     }
     const frames: Uint8Array[] = [];
-    for (const fremaSize of frameSizes) {
-        const frameData = data.subarray(offset, offset + fremaSize);
+    for (const frameSize of frameSizes) {
+        const frameData = data.subarray(offset, offset + frameSize);
         frames.push(frameData);
-        offset += fremaSize;
+        offset += frameSize;
     }
 
     debugLog(`SimpleBlock with lacing type ${LACING_TYPES[lacingType]}, ${numFrames} frames, sizes=[${frameSizes.join(', ')}]`);

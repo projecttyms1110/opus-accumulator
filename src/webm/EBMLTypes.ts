@@ -13,6 +13,8 @@ export const EBML_IDS = {
     // Leaves:
     SimpleBlock: 0xA3n,
     CodecID: 0x86n,
+    ChannelCount: 0x9Fn,
+    SamplingFrequency: 0xB5n,
     TrackNumber: 0xD7n,
 }
 
