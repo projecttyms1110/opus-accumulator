@@ -1,7 +1,7 @@
 {
   "name": "opus-accumulator",
   "version": "1.0.0",
-  "description": "Append Opus audio chunks from any browser into a growing, always-valid .opus file in pure JavaScript. Without FFmpeg, WASM, or re-encoding",
+  "description": "Append Opus audio chunks from any browser into a growing, always-valid, never-rewritten .opus file in pure JavaScript. Without FFmpeg, WASM, or re-encoding",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "module": "./dist/index.mjs",
