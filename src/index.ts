@@ -1,4 +1,4 @@
-import debug from "./common/debugger";
+import debug, { DebugCategory } from "./common/debugger";
 import { disassembleOpusFile } from "./common/disassemble";
 import { assembleOgg } from "./ogg/oggAssemble";
 import { findOggStart, parseOggPage } from "./ogg/oggParsing";
@@ -7,11 +7,15 @@ export const setDebug = (enabled: boolean) => {
     debug.isDebug = enabled;
 };
 
+export const setDebugCategories = (categories: DebugCategory[]) => 
+    debug.enabledCategories = new Set(categories);
+
+
 export const setCustomDebugLogger = (logger: (...args: any[]) => void) => {
     debug.customLogger = logger;
 };
 
-const { debugLog } = debug;
+const debugLog = (...args: any[]) => debug.debugLog('index', ...args);
 
 /**
  * Concatenate multiple Opus-in-Ogg or Opus-in-WebM files into a single logical bitstream.
@@ -71,7 +75,7 @@ export const prepareAccumulator = (
     let offset = oggStart;
     let lastPageSequence = 0;
     let maxGranule = BigInt(0);
-    let serialNumber = stream.serialNumber ?? 0;
+    let serialNumber = stream.serialNumber || 0;
 
     while (offset < result.length) {
         const page = parseOggPage(result, offset);
@@ -100,7 +104,7 @@ export const prepareAccumulator = (
 };
 
 /**
- *  Append new chunks to an existing accumulator
+ * Append new chunks to an existing accumulator
  * @param acc File to append to
  * @param chunks additional chunks to append, `.opus` (opus-in-ogg) files
  * @param accMeta Metadata about the current accumulator state

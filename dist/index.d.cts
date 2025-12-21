@@ -1,4 +1,7 @@
+type DebugCategory = 'parser' | 'disassembler' | 'assembler' | 'index';
+
 declare const setDebug: (enabled: boolean) => void;
+declare const setDebugCategories: (categories: DebugCategory[]) => Set<DebugCategory>;
 declare const setCustomDebugLogger: (logger: (...args: any[]) => void) => void;
 /**
  * Concatenate multiple Opus-in-Ogg or Opus-in-WebM files into a single logical bitstream.
@@ -21,7 +24,7 @@ declare const prepareAccumulator: (data: Uint8Array) => {
     meta: AccumulatorState;
 };
 /**
- *  Append new chunks to an existing accumulator
+ * Append new chunks to an existing accumulator
  * @param acc File to append to
  * @param chunks additional chunks to append, `.opus` (opus-in-ogg) files
  * @param accMeta Metadata about the current accumulator state
@@ -32,4 +35,4 @@ declare const appendToAccumulator: (acc: Uint8Array, chunks: Uint8Array[], accMe
     meta: AccumulatorState;
 };
 
-export { type AccumulatorState, appendToAccumulator, concatChunks, prepareAccumulator, setCustomDebugLogger, setDebug };
+export { type AccumulatorState, appendToAccumulator, concatChunks, prepareAccumulator, setCustomDebugLogger, setDebug, setDebugCategories };

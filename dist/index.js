@@ -1,8 +1,679 @@
-var k={isDebug:!1,customLogger:null,debugLog:(...e)=>{k.isDebug&&(k.customLogger?k.customLogger(...e):console.debug(...e))}},d=k;var A=e=>{for(let r=0;r<=e.length-4;r++)if(e[r]===79&&e[r+1]===103&&e[r+2]===103&&e[r+3]===83)return r;return-1},P=(e,r)=>{if(r+27>e.length||e[r]!==79||e[r+1]!==103||e[r+2]!==103||e[r+3]!==83)return null;let t=new DataView(e.buffer,e.byteOffset+r),s=e[r+4],a=e[r+5],i=t.getBigInt64(6,!0),n=t.getUint32(14,!0),u=t.getUint32(18,!0),c=t.getUint32(22,!0),o=e[r+26],l=0;for(let g=0;g<o;g++)l+=e[r+27+g];let m=27+o+l;return{version:s,headerType:a,granulePosition:i,serialNumber:n,pageSequence:u,checksum:c,segments:o,bodySize:l,pageSize:m,offset:r}};var G=e=>{let r=A(e);if(r===-1)throw new Error("No Ogg data found");r>0&&d.debugLog(`Skipping ${r} bytes of non-Ogg data at start`);let t=[],s=r,a=0,i,n=2,u=312,c=48e3,o=BigInt(0);for(;s<e.length;){let l=P(e,s);if(!l){d.debugLog(`Failed to parse Ogg page at offset ${s}`);break}if(a===0){i=l.serialNumber;let m=27+l.segments;n=e[s+m+9];let g=new DataView(e.buffer,e.byteOffset+s+m);u=g.getUint16(10,!0),c=g.getUint32(12,!0),d.debugLog(`OpusHead: channels=${n}, preskip=${u}, sampleRate=${c}, serial=${i}`)}else if(a===1)d.debugLog("Skipping OpusTags page");else{let m=27+l.segments,g=m+l.bodySize,p=l.granulePosition,f=Number(p-o);d.debugLog(`Data page ${a}: granule=${p}, samples=${f}, size=${l.bodySize}`),t.push({data:e.slice(s+m,s+g),samples:f}),o=p}s+=l.pageSize,a++}return d.debugLog(`Disassembled ${t.length} frames from Ogg, total granule: ${o}`),{frames:t,serialNumber:i,channels:n,preskip:u,sampleRate:c}};var S={EBML:440786851,Segment:408125543,Info:357149030,Tracks:374648427,Cluster:524531317,Timecode:231,SimpleBlock:163,BlockGroup:160,Block:161,TrackEntry:174,TrackNumber:215,TrackType:131,CodecID:134};var x=(e,r)=>{let t=e[r],s=128,a=1;for(;a<=8&&!(t&s);)s>>=1,a++;if(a>8)throw new Error("Invalid VINT");let i=t&s-1;for(let n=1;n<a;n++)i=i<<8|e[r+n];return{value:i,size:a}},z=(e,r)=>{let{value:t,size:s}=x(e,r);return{size:s,dataSize:t}},B=(e,r)=>{let t=0,{value:s,size:a}=x(e,t);t+=a;let i=e[t]<<8|e[t+1],n=r+(i<<16>>16);t+=2;let u=e[t];return t+=1,{data:e.slice(t),timestamp:n,trackNumber:s}};var{debugLog:N}=d,q=e=>{N("Extracting WebM frames");let r=W(e);N(`Extracted ${r.length} WebM frames`);let t=2,s=312,a=48e3,i=960,n=r.map(u=>({data:u.data,samples:i}));return N(`Converted to ${n.length} Opus frames`),N(`Returning Opus stream with channels=${t}, preskip=${s}, sampleRate=${a}`),{frames:n,channels:t,preskip:s,sampleRate:a}},W=e=>{let r=[],t=0,s=0,a=-1;for(;t<e.length&&!(t+8>e.length);){let{value:i,size:n}=x(e,t);t+=n;let{size:u,dataSize:c}=z(e,t);if(t+=u,t+c>e.length)break;switch(i){case S.TrackEntry:{let o=t,l=-1,m="";for(;o<t+c;){let{value:g,size:p}=x(e,o);o+=p;let{size:f,dataSize:b}=z(e,o);o+=f,g===S.TrackNumber?l=e[o]:g===S.CodecID&&(m=new TextDecoder().decode(e.slice(o,o+b))),o+=b}m==="A_OPUS"&&l!==-1&&(a=l);break}case S.Cluster:{let o=t;for(s=0;o<t+c;){let{value:l,size:m}=x(e,o);o+=m;let{size:g,dataSize:p}=z(e,o);if(o+=g,l===S.Timecode){s=0;for(let f=0;f<p;f++)s=s<<8|e[o+f]}else if(l===S.SimpleBlock){let f=e.slice(o,o+p),b=B(f,s);(a===-1||b.trackNumber===a)&&r.push(b)}else if(l===S.BlockGroup){let f=o;for(;f<o+p;){let{value:b,size:h}=x(e,f);f+=h;let{size:U,dataSize:O}=z(e,f);if(f+=U,b===S.Block){let $=e.slice(f,f+O),E=B($,s);(a===-1||E.trackNumber===a)&&r.push(E)}f+=O}}o+=p}break}}t+=c}return r};var T=(s=>(s[s.OGG_OPUS=0]="OGG_OPUS",s[s.WEBM=1]="WEBM",s[s.UNKNOWN=2]="UNKNOWN",s))(T||{});var L=e=>{if(A(e)!==-1)return 0;if(e.length>=4){let{value:t}=x(e,0);if(t===440786851)return 1}return 2};var I=e=>{let r=L(e);switch(d.debugLog(`Detected format: ${T[r]}`),r){case 0:return G(e);case 1:return q(e);case 2:throw new Error("Unknown audio format (not Ogg Opus or WebM)")}};var R=()=>{let e=new Uint32Array(256);for(let r=0;r<256;r++){let t=r<<24;for(let s=0;s<8;s++)t=t&2147483648?t<<1^79764919:t<<1;e[r]=t>>>0}return e},H=R(),v=e=>{let r=0;for(let t=0;t<e.length;t++)r=(r<<8^H[(r>>>24^e[t])&255])>>>0;return r};var C=(e,r)=>{let t="ogg-opus-concat",s=t.length,a=12+s+4,i=new Uint8Array(a),n=0;i.set(new TextEncoder().encode("OpusTags"),n),n+=8,i[n++]=s&255,i[n++]=s>>8&255,i[n++]=s>>16&255,i[n++]=s>>24&255,i.set(new TextEncoder().encode(t),n),n+=s,i[n++]=0,i[n++]=0,i[n++]=0,i[n++]=0;let u=Math.ceil(a/255),c=new Uint8Array(u);for(let p=0;p<u-1;p++)c[p]=255;c[u-1]=a%255||255;let o=27+u+a,l=new Uint8Array(o),m=new DataView(l.buffer);l[0]=79,l[1]=103,l[2]=103,l[3]=83,l[4]=0,l[5]=0,m.setBigInt64(6,BigInt(0),!0),m.setUint32(14,e,!0),m.setUint32(18,r,!0),m.setUint32(22,0,!0),l[26]=u,l.set(c,27),l.set(i,27+u);let g=v(l);return m.setUint32(22,g,!0),l},M=(e,r=2,t=312,s=48e3)=>{let a=new Uint8Array(19),i=new DataView(a.buffer),n=0;return a.set(new TextEncoder().encode("OpusHead"),n),n+=8,a[n++]=1,a[n++]=r,i.setUint16(n,t,!0),n+=2,i.setUint32(n,s,!0),n+=4,i.setInt16(n,0,!0),n+=2,a[n++]=0,F({headerType:2,granulePosition:BigInt(0),serialNumber:e,pageSequence:0,body:a})},F=e=>{let{headerType:r,granulePosition:t,serialNumber:s,pageSequence:a,body:i}=e,n=i.length,u=Math.floor(n/255),c=n%255,o=u+(c>0?1:0),l=new Uint8Array(o);for(let b=0;b<u;b++)l[b]=255;c>0&&(l[u]=c);let m=27+o+n,g=new Uint8Array(m),p=new DataView(g.buffer);g[0]=79,g[1]=103,g[2]=103,g[3]=83,g[4]=0,g[5]=r,p.setBigInt64(6,t,!0),p.setUint32(14,s,!0),p.setUint32(18,a,!0),p.setUint32(22,0,!0),g[26]=o,g.set(l,27),g.set(i,27+o);let f=v(g);return p.setUint32(22,f,!0),g};var{debugLog:w}=d,D=(e,r)=>{let t=r?.serialNumber??e.serialNumber??Math.floor(Math.random()*4294967295),s=r?.includeHeaders??!0,a=r?.startingSequence??0,i=r?.startingGranule??BigInt(0),n=[],u=0;s?(w(`Creating OpusHead: serial=${t}, channels=${e.channels}, preskip=${e.preskip}, sampleRate=${e.sampleRate}`),n.push(M(t,e.channels,e.preskip,e.sampleRate)),a++,u++,w(`Creating minimal OpusTags: sequence=${a}`),n.push(C(t,a)),a++,u++):w(`Assembling data pages only (no headers), starting at sequence=${a}, granule=${i}`);let c=4e3,o=[],l=0,m=0;for(let b of e.frames){if(l+b.data.length>c&&o.length>0){let h=new Uint8Array(l);w(`Flushing page: sequence=${a}, granule=${i}, size=${h.length}, packets=${o.length}`);let U=0;for(let $ of o)h.set($,U),U+=$.length;i+=BigInt(m);let O=F({headerType:0,granulePosition:i,serialNumber:t,pageSequence:a,body:h});n.push(O),a++,u++,o=[],l=0,m=0}o.push(b.data),l+=b.data.length,m+=b.samples}if(o.length>0){let b=new Uint8Array(l),h=0;for(let O of o)b.set(O,h),h+=O.length;i+=BigInt(m);let U=F({headerType:0,granulePosition:i,serialNumber:t,pageSequence:a,body:b});n.push(U),u++}let g=n.reduce((b,h)=>b+h.length,0),p=new Uint8Array(g),f=0;for(let b of n)p.set(b,f),f+=b.length;return w(`Assembled ${u} pages, final granule: ${i}, total size: ${p.length} bytes`),{data:p,pageCount:u,finalGranule:i}};var we=e=>{d.isDebug=e},$e=e=>{d.customLogger=e},{debugLog:y}=d,ke=e=>{if(e.length===0)throw new Error("No chunks provided");y(`
-=== Concatenating ${e.length} chunks ===`);let{result:r,meta:t}=_(e[0]);return y(`First chunk prepared: ${r.length} bytes, granule=${t.cumulativeGranule}`),e.length===1||({result:r}=V(r,e.slice(1),t),y(`Final result: ${r.length} bytes
-`)),r},_=e=>{y(`
-=== Preparing accumulator from ${e.length} byte file ===`);let r=I(e),{data:t}=D(r,{includeHeaders:!0}),a=A(t),i=0,n=BigInt(0),u=r.serialNumber??0;for(;a<t.length;){let c=P(t,a);if(!c)break;u===0&&(u=c.serialNumber),i=c.pageSequence,c.granulePosition>n&&(n=c.granulePosition),a+=c.pageSize}return y(`Prepared accumulator: serial=${u}, lastSeq=${i}, granule=${n}, size=${t.length}`),{result:t,meta:{serialNumber:u,lastPageSequence:i,cumulativeGranule:n,totalSize:t.length}}},V=(e,r,t)=>{y(`
-=== Appending ${r.length} chunks to accumulator ===`),y(`Starting state: seq=${t.lastPageSequence}, granule=${t.cumulativeGranule}, size=${t.totalSize}`);let s=[],a=t.lastPageSequence+1,i=t.cumulativeGranule;for(let o=0;o<r.length;o++){let l=r[o];y(`
---- Processing chunk ${o+1}/${r.length} (${l.length} bytes) ---`);let m=I(l),{data:g,pageCount:p,finalGranule:f}=D(m,{serialNumber:t.serialNumber,startingSequence:a,startingGranule:i,includeHeaders:!1});s.push(g),i=f,a+=p,y(`Chunk assembled: ${p} pages, granule advanced to ${f}`)}let n=e.length+s.reduce((o,l)=>o+l.length,0),u=new Uint8Array(n);u.set(e,0);let c=e.length;for(let o of s)u.set(o,c),c+=o.length;return y(`
-Final state: seq=${a-1}, granule=${i}, total size=${u.length}`),{result:u,meta:{serialNumber:t.serialNumber,lastPageSequence:a-1,cumulativeGranule:i,totalSize:u.length}}};export{V as appendToAccumulator,ke as concatChunks,_ as prepareAccumulator,$e as setCustomDebugLogger,we as setDebug};
+// src/common/debugger.ts
+var exports = {
+  isDebug: false,
+  customLogger: null,
+  enabledCategories: /* @__PURE__ */ new Set([]),
+  debugLog: (category, ...args) => {
+    if (!exports.isDebug) return;
+    if (exports.enabledCategories.size && !exports.enabledCategories.has(category)) return;
+    if (exports.customLogger) {
+      exports.customLogger(category, ...args);
+    } else {
+      console.debug(`Category: ${category}`, ...args);
+    }
+  }
+};
+var debugger_default = exports;
+
+// src/ogg/oggParsing.ts
+var findOggStart = (data) => {
+  for (let i = 0; i <= data.length - 4; i++) {
+    if (data[i] === 79 && data[i + 1] === 103 && data[i + 2] === 103 && data[i + 3] === 83) {
+      return i;
+    }
+  }
+  return -1;
+};
+var parseOggPage = (data, offset) => {
+  if (offset + 27 > data.length) return null;
+  if (data[offset] !== 79 || data[offset + 1] !== 103 || data[offset + 2] !== 103 || data[offset + 3] !== 83) {
+    return null;
+  }
+  const view = new DataView(data.buffer, data.byteOffset + offset);
+  const version = data[offset + 4];
+  const headerType = data[offset + 5];
+  const granulePosition = view.getBigInt64(6, true);
+  const serialNumber = view.getUint32(14, true);
+  const pageSequence = view.getUint32(18, true);
+  const checksum = view.getUint32(22, true);
+  const segments = data[offset + 26];
+  let bodySize = 0;
+  for (let i = 0; i < segments; i++) {
+    bodySize += data[offset + 27 + i];
+  }
+  const pageSize = 27 + segments + bodySize;
+  return {
+    version,
+    headerType,
+    granulePosition,
+    serialNumber,
+    pageSequence,
+    checksum,
+    segments,
+    bodySize,
+    pageSize,
+    offset
+  };
+};
+
+// src/ogg/oggDisassemble.ts
+var disassembleOgg = (data) => {
+  const oggStart = findOggStart(data);
+  if (oggStart === -1) {
+    throw new Error("No Ogg data found");
+  }
+  if (oggStart > 0) {
+    debugger_default.debugLog(`Skipping ${oggStart} bytes of non-Ogg data at start`);
+  }
+  const frames = [];
+  let offset = oggStart;
+  let pageCount = 0;
+  let serialNumber;
+  let channels = 2;
+  let preskip = 312;
+  let sampleRate = 48e3;
+  let lastGranule = BigInt(0);
+  while (offset < data.length) {
+    const page = parseOggPage(data, offset);
+    if (!page) {
+      debugger_default.debugLog(`Failed to parse Ogg page at offset ${offset}`);
+      break;
+    }
+    if (pageCount === 0) {
+      serialNumber = page.serialNumber;
+      const bodyOffset = 27 + page.segments;
+      channels = data[offset + bodyOffset + 9];
+      const view = new DataView(data.buffer, data.byteOffset + offset + bodyOffset);
+      preskip = view.getUint16(10, true);
+      sampleRate = view.getUint32(12, true);
+      debugger_default.debugLog(`OpusHead: channels=${channels}, preskip=${preskip}, sampleRate=${sampleRate}, serial=${serialNumber}`);
+    } else if (pageCount === 1) {
+      debugger_default.debugLog(`Skipping OpusTags page`);
+    } else {
+      const bodyOffset = 27 + page.segments;
+      const bodyEnd = bodyOffset + page.bodySize;
+      const currentGranule = page.granulePosition;
+      const samples = Number(currentGranule - lastGranule);
+      debugger_default.debugLog(`Data page ${pageCount}: granule=${currentGranule}, samples=${samples}, size=${page.bodySize}`);
+      frames.push({
+        data: data.subarray(offset + bodyOffset, offset + bodyEnd),
+        samples
+      });
+      lastGranule = currentGranule;
+    }
+    offset += page.pageSize;
+    pageCount++;
+  }
+  debugger_default.debugLog(`Disassembled ${frames.length} frames from Ogg, total granule: ${lastGranule}`);
+  return {
+    frames,
+    serialNumber,
+    channels,
+    preskip,
+    sampleRate
+  };
+};
+
+// src/webm/EBMLTypes.ts
+var EBML_IDS = {
+  // Containers:
+  EBML: 0x1A45DFA3n,
+  Segment: 0x18538067n,
+  Tracks: 0x1654AE6Bn,
+  TrackEntry: 0xAEn,
+  Cluster: 0x1F43B675n,
+  BlockGroup: 0xA0n,
+  // Leaves:
+  SimpleBlock: 0xA3n,
+  CodecID: 0x86n,
+  TrackNumber: 0xD7n
+};
+var LACING_TYPES = {
+  NONE: 0,
+  XIPH: 1,
+  FIXED_SIZE: 2,
+  EBML: 3
+};
+
+// src/webm/webmParse.ts
+var debugLog = (...args) => debugger_default.debugLog("parser", ...args);
+var readVINT = (data, offset, isId = false) => {
+  let firstByte = data[offset];
+  const width = Math.clz32(firstByte) - 24 + 1;
+  if (width < 1) {
+    throw new Error("Invalid EBML VINT width");
+  }
+  if (!isId) {
+    const markerBit = 1 << 8 - width;
+    firstByte &= ~markerBit;
+  }
+  let value = BigInt(firstByte);
+  for (let i = 1; i < width; i++) {
+    value = value << BigInt(8) | BigInt(data[offset + i]);
+  }
+  const maxValue = (BigInt(1) << BigInt(width * 7)) - BigInt(1);
+  const isUnknown = value === maxValue;
+  debugLog(`Read VINT at offset ${offset}: value=${value}, size=${width}, isUnknown=${isUnknown}, bytes=[
+${Array.from(data.subarray(offset, offset + width)).map((b) => b.toString(16).padStart(2, "0")).join(" ")}
+]`);
+  return {
+    value,
+    size: width,
+    isUnknown
+  };
+};
+var readId = (data, offset) => readVINT(data, offset, true);
+var decodeString = (data, offset, length) => new TextDecoder("utf-8").decode(data.subarray(offset, offset + length)).replace(/\0/g, "");
+var decodeSignedVint = (value, width) => {
+  const range = (1n << BigInt(7 * width - 1)) - 1n;
+  return value - range;
+};
+var processSimpleBlock = (data, lacingType) => {
+  if (lacingType === LACING_TYPES.NONE) {
+    debugLog(`SimpleBlock with no lacing, single frame of size ${data.length} bytes`);
+    return [data];
+  }
+  const numFrames = data[0] + 1;
+  let offset = 1;
+  const frameSizes = [];
+  if (lacingType === LACING_TYPES.FIXED_SIZE) {
+    const totalSize = data.length - 1;
+    const frameSize = Math.floor(totalSize / numFrames);
+    for (let i = 0; i < numFrames; i++) {
+      frameSizes.push(frameSize);
+    }
+  } else {
+    switch (lacingType) {
+      case LACING_TYPES.XIPH:
+        for (let i = 0; i < numFrames - 1; i++) {
+          let size = 0;
+          let byte = 255;
+          while (byte === 255) {
+            byte = data[offset++];
+            size += byte;
+          }
+          frameSizes.push(size);
+        }
+        break;
+      case LACING_TYPES.EBML:
+        let { value: firstSize, size: firstSizeLen } = readVINT(data, offset);
+        offset += firstSizeLen;
+        frameSizes.push(Number(firstSize));
+        let previousSize = firstSize;
+        for (let i = 1; i < numFrames - 1; i++) {
+          let { value: sizeDiffRaw, size: sizeDiffLen } = readVINT(data, offset);
+          offset += sizeDiffLen;
+          const sizeDiff = BigInt(decodeSignedVint(sizeDiffRaw, sizeDiffLen));
+          const frameSize = previousSize + sizeDiff;
+          frameSizes.push(Number(frameSize));
+          previousSize = frameSize;
+        }
+        break;
+    }
+    const totalKnownSizes = frameSizes.reduce((a, b) => a + b, 0);
+    const lastFrameSize = data.length - offset - totalKnownSizes;
+    frameSizes.push(lastFrameSize);
+  }
+  const frames = [];
+  for (const fremaSize of frameSizes) {
+    const frameData = data.subarray(offset, offset + fremaSize);
+    frames.push(frameData);
+    offset += fremaSize;
+  }
+  debugLog(`SimpleBlock with lacing type ${["Xiph", "Fixed", "EBML"][lacingType - 1]}, ${numFrames} frames, sizes=[${frameSizes.join(", ")}]`);
+  return frames;
+};
+
+// src/webm/webmDisassemble.ts
+var debugLog2 = (...args) => debugger_default.debugLog("disassembler", ...args);
+var disassembleWebM = (data) => {
+  debugLog2("Extracting WebM frames");
+  const webmFrames = extractFrames(data);
+  debugLog2(`Extracted ${webmFrames.length} WebM frames`);
+  const channels = 1;
+  const preskip = 312;
+  const sampleRate = 48e3;
+  const samplesPerFrame = 960;
+  const frames = webmFrames.map((frame) => ({
+    data: frame,
+    samples: samplesPerFrame
+    // WebM doesn't store this, assume 20ms frames
+  }));
+  debugLog2(`Converted to ${frames.length} Opus frames`);
+  debugLog2(`Returning Opus stream with channels=${channels}, preskip=${preskip}, sampleRate=${sampleRate}`);
+  return {
+    frames,
+    channels,
+    preskip,
+    sampleRate
+  };
+};
+var extractFrames = (buffer) => {
+  const parentEnds = [buffer.length];
+  const frames = [];
+  let offset = 0;
+  let currentTrackEntryNo = -1;
+  let opusTrackNo = -1;
+  let elementsCount = 0;
+  while (parentEnds.length > 0) {
+    elementsCount++;
+    const currentEnd = parentEnds[parentEnds.length - 1];
+    if (offset >= currentEnd) {
+      parentEnds.pop();
+      continue;
+    }
+    const id = readId(buffer, offset);
+    const elementSize = readVINT(buffer, offset + id.size);
+    const dataStart = offset + id.size + elementSize.size;
+    const dataEnd = elementSize.isUnknown ? currentEnd : dataStart + Number(elementSize.value);
+    switch (id.value) {
+      // --- CONTAINERS: Enter (Push to stack and continue to the body) ---
+      case EBML_IDS.EBML:
+      case EBML_IDS.Segment:
+      case EBML_IDS.Tracks:
+      case EBML_IDS.TrackEntry:
+      case EBML_IDS.Cluster:
+        parentEnds.push(dataEnd);
+        offset = dataStart;
+        debugLog2(`Entering container ID 0x${id.value.toString(16)} at offset ${offset}, ends at ${dataEnd}`);
+        break;
+      // --- LEAF ELEMENTS WITH REQUIRED DATA (Process) ---
+      case EBML_IDS.TrackNumber:
+        const trackNo = readVINT(buffer, dataStart);
+        currentTrackEntryNo = Number(trackNo.value);
+        offset = dataEnd;
+        debugLog2(`Found TrackEntry number: ${currentTrackEntryNo}`);
+        break;
+      case EBML_IDS.CodecID:
+        const codec = decodeString(buffer, dataStart, Number(elementSize.value));
+        if (codec === "A_OPUS") {
+          opusTrackNo = currentTrackEntryNo;
+          debugLog2(`Identified Opus track number: ${opusTrackNo}`);
+        }
+        offset = dataEnd;
+        debugLog2(`Processed CodecID: ${codec} for TrackEntry number: ${currentTrackEntryNo}`);
+        break;
+      case EBML_IDS.SimpleBlock:
+        debugLog2(`Processing SimpleBlock at offset ${dataStart}`);
+        if (opusTrackNo === -1) {
+          debugLog2(`No Opus track identified yet, skipping SimpleBlock`);
+          break;
+        }
+        const blockTrackNo = readVINT(buffer, dataStart);
+        debugLog2(`SimpleBlock TrackNumber: ${blockTrackNo.value}, Opus TrackNumber: ${opusTrackNo}`);
+        if (Number(blockTrackNo.value) !== opusTrackNo)
+          break;
+        const flags = buffer[dataStart + blockTrackNo.size + 2];
+        const lacingType = (flags & 6) >> 1;
+        debugLog2(`SimpleBlock lacing type: ${lacingType} ( ${["Xiph", "Fixed", "EBML"][lacingType - 1]})`);
+        const blockDataStart = dataStart + blockTrackNo.size + 2 + 1;
+        const blockDataEnd = dataEnd;
+        const newFrames = processSimpleBlock(buffer.subarray(blockDataStart, blockDataEnd), lacingType);
+        debugLog2(`Extracted ${newFrames.length} frames from SimpleBlock`);
+        frames.push(...newFrames);
+        offset = dataEnd;
+        break;
+      // --- ANYTHING ELSE (Skip) ---
+      default:
+        debugLog2(`Skipping unrecognized element ID 0x${id.value.toString(16)} at offset ${offset}, size=${elementSize.value}${elementSize.isUnknown ? " (unknown size)" : ""}`);
+        if (elementSize.isUnknown) {
+          parentEnds.push(dataEnd);
+        } else {
+          offset = dataEnd;
+        }
+        break;
+    }
+  }
+  debugLog2(`Total elements processed: ${elementsCount}`);
+  return frames;
+};
+
+// src/common/audioTypes.ts
+var AudioFormat = /* @__PURE__ */ ((AudioFormat2) => {
+  AudioFormat2[AudioFormat2["OGG_OPUS"] = 0] = "OGG_OPUS";
+  AudioFormat2[AudioFormat2["WEBM"] = 1] = "WEBM";
+  AudioFormat2[AudioFormat2["UNKNOWN"] = 2] = "UNKNOWN";
+  return AudioFormat2;
+})(AudioFormat || {});
+
+// src/common/formatDetection.ts
+var detectFormat = (data) => {
+  const oggStart = findOggStart(data);
+  if (oggStart !== -1) {
+    return 0 /* OGG_OPUS */;
+  }
+  if (data.length >= 4 && data[0] === 26 && data[1] === 69 && data[2] === 223 && data[3] === 163) {
+    return 1 /* WEBM */;
+  }
+  return 2 /* UNKNOWN */;
+};
+
+// src/common/disassemble.ts
+var debugLog3 = (...args) => debugger_default.debugLog("disassembler", ...args);
+var disassembleOpusFile = (data) => {
+  const format = detectFormat(data);
+  debugLog3(`Detected format: ${AudioFormat[format]}`);
+  switch (format) {
+    case 0 /* OGG_OPUS */:
+      return disassembleOgg(data);
+    case 1 /* WEBM */:
+      return disassembleWebM(data);
+    case 2 /* UNKNOWN */:
+      throw new Error("Unknown audio format (not Ogg Opus or WebM)");
+  }
+};
+
+// src/ogg/oggCrc.ts
+var makeCRCTable = () => {
+  const table = new Uint32Array(256);
+  for (let i = 0; i < 256; i++) {
+    let c = i << 24;
+    for (let j = 0; j < 8; j++) {
+      c = c & 2147483648 ? c << 1 ^ 79764919 : c << 1;
+    }
+    table[i] = c >>> 0;
+  }
+  return table;
+};
+var crcTable = makeCRCTable();
+var calculateCRC = (data) => {
+  let crc = 0;
+  for (let i = 0; i < data.length; i++) {
+    crc = (crc << 8 ^ crcTable[(crc >>> 24 ^ data[i]) & 255]) >>> 0;
+  }
+  return crc;
+};
+
+// src/ogg/oggWrite.ts
+var createMinimalOpusTagsPage = (serialNumber, pageSequence) => {
+  const vendorString = "ogg-opus-concat";
+  const vendorLength = vendorString.length;
+  const bodySize = 8 + 4 + vendorLength + 4;
+  const body = new Uint8Array(bodySize);
+  let offset = 0;
+  body.set(new TextEncoder().encode("OpusTags"), offset);
+  offset += 8;
+  body[offset++] = vendorLength & 255;
+  body[offset++] = vendorLength >> 8 & 255;
+  body[offset++] = vendorLength >> 16 & 255;
+  body[offset++] = vendorLength >> 24 & 255;
+  body.set(new TextEncoder().encode(vendorString), offset);
+  offset += vendorLength;
+  body[offset++] = 0;
+  body[offset++] = 0;
+  body[offset++] = 0;
+  body[offset++] = 0;
+  const segments = Math.ceil(bodySize / 255);
+  const segmentTable = new Uint8Array(segments);
+  for (let i = 0; i < segments - 1; i++) {
+    segmentTable[i] = 255;
+  }
+  segmentTable[segments - 1] = bodySize % 255 || 255;
+  const pageSize = 27 + segments + bodySize;
+  const page = new Uint8Array(pageSize);
+  const view = new DataView(page.buffer);
+  page[0] = 79;
+  page[1] = 103;
+  page[2] = 103;
+  page[3] = 83;
+  page[4] = 0;
+  page[5] = 0;
+  view.setBigInt64(6, BigInt(0), true);
+  view.setUint32(14, serialNumber, true);
+  view.setUint32(18, pageSequence, true);
+  view.setUint32(22, 0, true);
+  page[26] = segments;
+  page.set(segmentTable, 27);
+  page.set(body, 27 + segments);
+  const crc = calculateCRC(page);
+  view.setUint32(22, crc, true);
+  return page;
+};
+var createOpusHeadPage = (serialNumber, channels = 2, preskip = 312, sampleRate = 48e3) => {
+  const body = new Uint8Array(19);
+  const view = new DataView(body.buffer);
+  let offset = 0;
+  body.set(new TextEncoder().encode("OpusHead"), offset);
+  offset += 8;
+  body[offset++] = 1;
+  body[offset++] = channels;
+  view.setUint16(offset, preskip, true);
+  offset += 2;
+  view.setUint32(offset, sampleRate, true);
+  offset += 4;
+  view.setInt16(offset, 0, true);
+  offset += 2;
+  body[offset++] = 0;
+  return createOggPage({
+    headerType: 2,
+    // BOS (Beginning of Stream)
+    granulePosition: BigInt(0),
+    serialNumber,
+    pageSequence: 0,
+    body
+  });
+};
+var createOggPage = (options) => {
+  const { headerType, granulePosition, serialNumber, pageSequence, body } = options;
+  const bodySize = body.length;
+  const fullSegments = Math.floor(bodySize / 255);
+  const lastSegmentSize = bodySize % 255;
+  const segments = fullSegments + (lastSegmentSize > 0 ? 1 : 0);
+  const segmentTable = new Uint8Array(segments);
+  for (let i = 0; i < fullSegments; i++) {
+    segmentTable[i] = 255;
+  }
+  if (lastSegmentSize > 0) {
+    segmentTable[fullSegments] = lastSegmentSize;
+  }
+  const pageSize = 27 + segments + bodySize;
+  const page = new Uint8Array(pageSize);
+  const view = new DataView(page.buffer);
+  page[0] = 79;
+  page[1] = 103;
+  page[2] = 103;
+  page[3] = 83;
+  page[4] = 0;
+  page[5] = headerType;
+  view.setBigInt64(6, granulePosition, true);
+  view.setUint32(14, serialNumber, true);
+  view.setUint32(18, pageSequence, true);
+  view.setUint32(22, 0, true);
+  page[26] = segments;
+  page.set(segmentTable, 27);
+  page.set(body, 27 + segments);
+  const crc = calculateCRC(page);
+  view.setUint32(22, crc, true);
+  return page;
+};
+
+// src/ogg/oggAssemble.ts
+var { debugLog: debugLog4 } = debugger_default;
+var assembleOgg = (stream, options) => {
+  const serialNumber = options?.serialNumber || stream.serialNumber || Math.floor(Math.random() * 4294967295);
+  const includeHeaders = options?.includeHeaders === null ? true : options?.includeHeaders;
+  let pageSequence = options?.startingSequence === null ? 0 : options?.startingSequence || 0;
+  let granule = options?.startingGranule === null ? BigInt(0) : options?.startingGranule || BigInt(0);
+  const pages = [];
+  let pageCount = 0;
+  if (includeHeaders) {
+    debugLog4(`Creating OpusHead: serial=${serialNumber}, channels=${stream.channels}, preskip=${stream.preskip}, sampleRate=${stream.sampleRate}`);
+    pages.push(createOpusHeadPage(serialNumber, stream.channels, stream.preskip, stream.sampleRate));
+    pageSequence++;
+    pageCount++;
+    debugLog4(`Creating minimal OpusTags: sequence=${pageSequence}`);
+    pages.push(createMinimalOpusTagsPage(serialNumber, pageSequence));
+    pageSequence++;
+    pageCount++;
+  } else {
+    debugLog4(`Assembling data pages only (no headers), starting at sequence=${pageSequence}, granule=${granule}`);
+  }
+  const MAX_PAGE_SIZE = 4e3;
+  let currentPageData = [];
+  let currentPageSize = 0;
+  let currentPageSamples = 0;
+  for (const frame of stream.frames) {
+    if (currentPageSize + frame.data.length > MAX_PAGE_SIZE && currentPageData.length > 0) {
+      const pageBody = new Uint8Array(currentPageSize);
+      debugLog4(`Flushing page: sequence=${pageSequence}, granule=${granule}, size=${pageBody.length}, packets=${currentPageData.length}`);
+      let offset = 0;
+      for (const d of currentPageData) {
+        pageBody.set(d, offset);
+        offset += d.length;
+      }
+      granule += BigInt(currentPageSamples);
+      const page = createOggPage({
+        headerType: 0,
+        granulePosition: granule,
+        serialNumber,
+        pageSequence,
+        body: pageBody
+      });
+      pages.push(page);
+      pageSequence++;
+      pageCount++;
+      currentPageData = [];
+      currentPageSize = 0;
+      currentPageSamples = 0;
+    }
+    currentPageData.push(frame.data);
+    currentPageSize += frame.data.length;
+    currentPageSamples += frame.samples;
+  }
+  if (currentPageData.length > 0) {
+    const pageBody = new Uint8Array(currentPageSize);
+    let offset = 0;
+    for (const d of currentPageData) {
+      pageBody.set(d, offset);
+      offset += d.length;
+    }
+    granule += BigInt(currentPageSamples);
+    const page = createOggPage({
+      headerType: 0,
+      granulePosition: granule,
+      serialNumber,
+      pageSequence,
+      body: pageBody
+    });
+    pages.push(page);
+    pageCount++;
+  }
+  const totalSize = pages.reduce((sum, p) => sum + p.length, 0);
+  const data = new Uint8Array(totalSize);
+  let resultOffset = 0;
+  for (const page of pages) {
+    data.set(page, resultOffset);
+    resultOffset += page.length;
+  }
+  debugLog4(`Assembled ${pageCount} pages, final granule: ${granule}, total size: ${data.length} bytes`);
+  return { data, pageCount, finalGranule: granule };
+};
+
+// src/index.ts
+var setDebug = (enabled) => {
+  debugger_default.isDebug = enabled;
+};
+var setDebugCategories = (categories) => debugger_default.enabledCategories = new Set(categories);
+var setCustomDebugLogger = (logger) => {
+  debugger_default.customLogger = logger;
+};
+var debugLog5 = (...args) => debugger_default.debugLog("index", ...args);
+var concatChunks = (chunks) => {
+  if (chunks.length === 0) {
+    throw new Error("No chunks provided");
+  }
+  debugLog5(`
+=== Concatenating ${chunks.length} chunks ===`);
+  let { result, meta } = prepareAccumulator(chunks[0]);
+  debugLog5(`First chunk prepared: ${result.length} bytes, granule=${meta.cumulativeGranule}`);
+  if (chunks.length === 1) {
+    return result;
+  }
+  ({ result } = appendToAccumulator(result, chunks.slice(1), meta));
+  debugLog5(`Final result: ${result.length} bytes
+`);
+  return result;
+};
+var prepareAccumulator = (data) => {
+  debugLog5(`
+=== Preparing accumulator from ${data.length} byte file ===`);
+  const stream = disassembleOpusFile(data);
+  const { data: result } = assembleOgg(stream, { includeHeaders: true });
+  const oggStart = findOggStart(result);
+  let offset = oggStart;
+  let lastPageSequence = 0;
+  let maxGranule = BigInt(0);
+  let serialNumber = stream.serialNumber || 0;
+  while (offset < result.length) {
+    const page = parseOggPage(result, offset);
+    if (!page) break;
+    if (serialNumber === 0) serialNumber = page.serialNumber;
+    lastPageSequence = page.pageSequence;
+    if (page.granulePosition > maxGranule) {
+      maxGranule = page.granulePosition;
+    }
+    offset += page.pageSize;
+  }
+  debugLog5(`Prepared accumulator: serial=${serialNumber}, lastSeq=${lastPageSequence}, granule=${maxGranule}, size=${result.length}`);
+  return {
+    result,
+    meta: {
+      serialNumber,
+      lastPageSequence,
+      cumulativeGranule: maxGranule,
+      totalSize: result.length
+    }
+  };
+};
+var appendToAccumulator = (acc, chunks, accMeta) => {
+  debugLog5(`
+=== Appending ${chunks.length} chunks to accumulator ===`);
+  debugLog5(`Starting state: seq=${accMeta.lastPageSequence}, granule=${accMeta.cumulativeGranule}, size=${accMeta.totalSize}`);
+  const dataPages = [];
+  let pageSequence = accMeta.lastPageSequence + 1;
+  let granule = accMeta.cumulativeGranule;
+  for (let i = 0; i < chunks.length; i++) {
+    const chunk = chunks[i];
+    debugLog5(`
+--- Processing chunk ${i + 1}/${chunks.length} (${chunk.length} bytes) ---`);
+    const stream = disassembleOpusFile(chunk);
+    const { data: chunkData, pageCount, finalGranule } = assembleOgg(stream, {
+      serialNumber: accMeta.serialNumber,
+      startingSequence: pageSequence,
+      startingGranule: granule,
+      includeHeaders: false
+    });
+    dataPages.push(chunkData);
+    granule = finalGranule;
+    pageSequence += pageCount;
+    debugLog5(`Chunk assembled: ${pageCount} pages, granule advanced to ${finalGranule}`);
+  }
+  const totalSize = acc.length + dataPages.reduce((sum, p) => sum + p.length, 0);
+  const result = new Uint8Array(totalSize);
+  result.set(acc, 0);
+  let offset = acc.length;
+  for (const page of dataPages) {
+    result.set(page, offset);
+    offset += page.length;
+  }
+  debugLog5(`
+Final state: seq=${pageSequence - 1}, granule=${granule}, total size=${result.length}`);
+  return {
+    result,
+    meta: {
+      serialNumber: accMeta.serialNumber,
+      lastPageSequence: pageSequence - 1,
+      cumulativeGranule: granule,
+      totalSize: result.length
+    }
+  };
+};
+export {
+  appendToAccumulator,
+  concatChunks,
+  prepareAccumulator,
+  setCustomDebugLogger,
+  setDebug,
+  setDebugCategories
+};
 //# sourceMappingURL=index.js.map

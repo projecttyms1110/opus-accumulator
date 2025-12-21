@@ -1,24 +1,23 @@
 import { OpusFrame, OpusStream } from "../types/opus";
-import { WebMFrame } from "./webM";
-import { EBML_IDS } from "./matroskaTypes";
-import { parseBlock, readElementSize, readVINT } from "./webmParse";
+import { EBML_IDS } from "./EBMLTypes";
+import { decodeString,  processSimpleBlock, readId, readVINT } from "./webmParse";
 import debug from "../common/debugger";
 
-const { debugLog } = debug;
+const debugLog = (...args: any[]) => debug.debugLog('disassembler', ...args);
 
 export const disassembleWebM = (data: Uint8Array): OpusStream => {
     debugLog('Extracting WebM frames');
-    const webmFrames = extractWebMFrames(data);
+    const webmFrames = extractFrames(data);
     debugLog(`Extracted ${webmFrames.length} WebM frames`);
 
     // Extract codec info from WebM (simplified - assume defaults)
-    const channels = 2;
+    const channels = 1; // Mono
     const preskip = 312;
     const sampleRate = 48000;
     const samplesPerFrame = 960; // 20ms at 48kHz
 
     const frames: OpusFrame[] = webmFrames.map(frame => ({
-        data: frame.data,
+        data: frame,
         samples: samplesPerFrame, // WebM doesn't store this, assume 20ms frames
     }));
 
@@ -35,111 +34,117 @@ export const disassembleWebM = (data: Uint8Array): OpusStream => {
 /**
  * Extract Opus frames from a WebM/Matroska file
  */
-export const extractWebMFrames = (data: Uint8Array): WebMFrame[] => {
-    const frames: WebMFrame[] = [];
+export const extractFrames = (buffer: Uint8Array): Uint8Array[] => {
+    const parentEnds = [buffer.length];
+    const frames: Uint8Array[] = [];
     let offset = 0;
-    let clusterTimecode = 0;
+    let currentTrackEntryNo = -1;
+    let opusTrackNo = -1;
+    let elementsCount = 0;
 
-    // Find codec info first
-    let opusTrackNumber = -1;
+    while (parentEnds.length > 0) {
+        elementsCount++;
 
-    while (offset < data.length) {
-        if (offset + 8 > data.length) break;
+        const currentEnd = parentEnds[parentEnds.length - 1];
 
-        // Read element ID
-        const { value: elementId, size: idSize } = readVINT(data, offset);
-        offset += idSize;
-
-        // Read element size
-        const { size: sizeBytes, dataSize } = readElementSize(data, offset);
-        offset += sizeBytes;
-
-        if (offset + dataSize > data.length) break;
-
-        // Handle different element types
-        switch (elementId) {
-            case EBML_IDS.TrackEntry: {
-                // Parse track to find Opus codec
-                let trackOffset = offset;
-                let trackNum = -1;
-                let codecId = '';
-
-                while (trackOffset < offset + dataSize) {
-                    const { value: subId, size: subIdSize } = readVINT(data, trackOffset);
-                    trackOffset += subIdSize;
-                    const { size: subSizeBytes, dataSize: subDataSize } = readElementSize(data, trackOffset);
-                    trackOffset += subSizeBytes;
-
-                    if (subId === EBML_IDS.TrackNumber) {
-                        trackNum = data[trackOffset]; // Usually just 1 byte
-                    } else if (subId === EBML_IDS.CodecID) {
-                        codecId = new TextDecoder().decode(data.slice(trackOffset, trackOffset + subDataSize));
-                    }
-
-                    trackOffset += subDataSize;
-                }
-
-                if (codecId === 'A_OPUS' && trackNum !== -1) {
-                    opusTrackNumber = trackNum;
-                }
-                break;
-            }
-
-            case EBML_IDS.Cluster: {
-                // Parse cluster to extract blocks
-                let clusterOffset = offset;
-                clusterTimecode = 0;
-
-                while (clusterOffset < offset + dataSize) {
-                    const { value: subId, size: subIdSize } = readVINT(data, clusterOffset);
-                    clusterOffset += subIdSize;
-                    const { size: subSizeBytes, dataSize: subDataSize } = readElementSize(data, clusterOffset);
-                    clusterOffset += subSizeBytes;
-
-                    if (subId === EBML_IDS.Timecode) {
-                        // Cluster timecode (unsigned integer)
-                        clusterTimecode = 0;
-                        for (let i = 0; i < subDataSize; i++) {
-                            clusterTimecode = (clusterTimecode << 8) | data[clusterOffset + i];
-                        }
-                    } else if (subId === EBML_IDS.SimpleBlock) {
-                        const blockData = data.slice(clusterOffset, clusterOffset + subDataSize);
-                        const frame = parseBlock(blockData, clusterTimecode);
-
-                        // Only include frames from Opus track
-                        if (opusTrackNumber === -1 || frame.trackNumber === opusTrackNumber) {
-                            frames.push(frame);
-                        }
-                    } else if (subId === EBML_IDS.BlockGroup) {
-                        // BlockGroup contains Block element
-                        let bgOffset = clusterOffset;
-                        while (bgOffset < clusterOffset + subDataSize) {
-                            const { value: bgId, size: bgIdSize } = readVINT(data, bgOffset);
-                            bgOffset += bgIdSize;
-                            const { size: bgSizeBytes, dataSize: bgDataSize } = readElementSize(data, bgOffset);
-                            bgOffset += bgSizeBytes;
-
-                            if (bgId === EBML_IDS.Block) {
-                                const blockData = data.slice(bgOffset, bgOffset + bgDataSize);
-                                const frame = parseBlock(blockData, clusterTimecode);
-
-                                if (opusTrackNumber === -1 || frame.trackNumber === opusTrackNumber) {
-                                    frames.push(frame);
-                                }
-                            }
-
-                            bgOffset += bgDataSize;
-                        }
-                    }
-
-                    clusterOffset += subDataSize;
-                }
-                break;
-            }
+        // 1. Check if we've finished the current container
+        if (offset >= currentEnd) {
+            parentEnds.pop();
+            continue;
         }
 
-        offset += dataSize;
+        // 2. Read element ID and size
+        const id = readId(buffer, offset);
+        const elementSize = readVINT(buffer, offset + id.size);
+        const dataStart = offset + id.size + elementSize.size;
+
+        // 3. Determine the end of this element
+        // if size is unknown, we assume it goes to the end of the parent
+        // so it inherits the parent's end
+        const dataEnd = elementSize.isUnknown
+            ? currentEnd
+            : dataStart + Number(elementSize.value);
+
+        // 4. Decision based on element ID:
+        // Enter, Process, or Skip
+        switch (id.value) {
+            // --- CONTAINERS: Enter (Push to stack and continue to the body) ---
+            case EBML_IDS.EBML:
+            case EBML_IDS.Segment:
+            case EBML_IDS.Tracks:
+            case EBML_IDS.TrackEntry:
+            case EBML_IDS.Cluster:
+                parentEnds.push(dataEnd);
+                offset = dataStart;
+                debugLog(`Entering container ID 0x${id.value.toString(16)} at offset ${offset}, ends at ${dataEnd}`);
+                break;
+
+            // --- LEAF ELEMENTS WITH REQUIRED DATA (Process) ---
+            case EBML_IDS.TrackNumber:
+                // Note current TrackNumber (inside TrackEntry, for CodecID lookup)
+                const trackNo = readVINT(buffer, dataStart); // Value is a VINT
+                currentTrackEntryNo = Number(trackNo.value);
+                offset = dataEnd;
+                debugLog(`Found TrackEntry number: ${currentTrackEntryNo}`);
+                break;
+
+            case EBML_IDS.CodecID:
+                // Check if this TrackEntry is Opus
+                const codec = decodeString(buffer, dataStart, Number(elementSize.value));
+                if (codec === "A_OPUS") {
+                    opusTrackNo = currentTrackEntryNo;
+                    debugLog(`Identified Opus track number: ${opusTrackNo}`);
+                }
+                offset = dataEnd;
+                debugLog(`Processed CodecID: ${codec} for TrackEntry number: ${currentTrackEntryNo}`);
+                break;
+
+            case EBML_IDS.SimpleBlock:
+                // Process SimpleBlock frame (extract if Opus frames)
+                debugLog(`Processing SimpleBlock at offset ${dataStart}`);
+                if (opusTrackNo === -1) {
+                    debugLog(`No Opus track identified yet, skipping SimpleBlock`);
+                    break;
+                }
+
+                const blockTrackNo = readVINT(buffer, dataStart);
+
+                debugLog(`SimpleBlock TrackNumber: ${blockTrackNo.value}, Opus TrackNumber: ${opusTrackNo}`);
+
+                if (Number(blockTrackNo.value) !== opusTrackNo)
+                    break;
+
+                const flags = buffer[dataStart + blockTrackNo.size + 2];
+                const lacingType = (flags & 0x06) >> 1;
+
+                debugLog(`SimpleBlock lacing type: ${lacingType} ( ${['Xiph', 'Fixed', 'EBML'][lacingType - 1]})`);
+
+                // Skip header: TrackNo VINT + 2 (Timecode) + 1 (Flags)
+                const blockDataStart = dataStart + blockTrackNo.size + 2 + 1;
+                const blockDataEnd = dataEnd;
+
+                const newFrames = processSimpleBlock(buffer.subarray(blockDataStart, blockDataEnd), lacingType);
+
+                debugLog(`Extracted ${newFrames.length} frames from SimpleBlock`);
+
+                frames.push(...newFrames);
+                offset = dataEnd;
+                break;
+            // --- ANYTHING ELSE (Skip) ---
+            default:
+                    debugLog(`Skipping unrecognized element ID 0x${id.value.toString(16)} at offset ${offset}, size=${elementSize.value}${elementSize.isUnknown ? ' (unknown size)' : ''}`);
+                if (elementSize.isUnknown) {
+                    // If we hit an unknown-sized element we don't recognize, 
+                    // we are forced to treat it as a container to look for IDs we DO know.
+                    parentEnds.push(dataEnd);
+                } else {
+                    offset = dataEnd;
+                }
+                break;
+        }
     }
 
+    debugLog(`Total elements processed: ${elementsCount}`);
+
     return frames;
-};
+}

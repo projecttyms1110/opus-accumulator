@@ -242,10 +242,10 @@ export const wrapOpusPacketsInOgg = (
         serialNumber?: number;
     }
 ): Uint8Array => {
-    const channels = options?.channels ?? 2;
-    const preskip = options?.preskip ?? 312;
-    const sampleRate = options?.sampleRate ?? 48000;
-    const serialNumber = options?.serialNumber ?? Math.floor(Math.random() * 0xFFFFFFFF);
+    const channels = options?.channels || 2;
+    const preskip = options?.preskip || 312;
+    const sampleRate = options?.sampleRate || 48000;
+    const serialNumber = options?.serialNumber || Math.floor(Math.random() * 0xFFFFFFFF);
     
     const pages: Uint8Array[] = [];
     let pageSequence = 0;

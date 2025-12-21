@@ -53,7 +53,7 @@ export const disassembleOgg = (data: Uint8Array): OpusStream => {
             // For simplicity, treat entire page body as one frame
             // (In reality, pages can contain multiple frames with lacing)
             frames.push({
-                data: data.slice(offset + bodyOffset, offset + bodyEnd),
+                data: data.subarray(offset + bodyOffset, offset + bodyEnd),
                 samples: samples,
             });
 

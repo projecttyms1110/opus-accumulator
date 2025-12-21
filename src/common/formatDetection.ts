@@ -1,5 +1,4 @@
 import { findOggStart } from "../ogg/oggParsing";
-import { readVINT } from "../webm/webmParse";
 import { AudioFormat } from "./audioTypes";
 
 export const detectFormat = (data: Uint8Array): AudioFormat => {
@@ -8,14 +7,15 @@ export const detectFormat = (data: Uint8Array): AudioFormat => {
     if (oggStart !== -1) {
         return AudioFormat.OGG_OPUS;
     }
-    
-    // Check for WebM/Matroska EBML header
-    if (data.length >= 4) {
-        const { value: id } = readVINT(data, 0);
-        if (id === 0x1A45DFA3) { // EBML
-            return AudioFormat.WEBM;
-        }
+
+    // Check for WebM/Matroska EBML header (0x1A45DFA3)
+    if (data.length >= 4 &&
+        data[0] === 0x1A &&
+        data[1] === 0x45 &&
+        data[2] === 0xDF &&
+        data[3] === 0xA3) {
+        return AudioFormat.WEBM;
     }
-    
+
     return AudioFormat.UNKNOWN;
 };
