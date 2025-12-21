@@ -258,6 +258,60 @@ var processSimpleBlock = (data, lacingType) => {
   return frames;
 };
 
+// src/opus/opusParsing.ts
+var getOpusSamples = (opusPacket) => {
+  const toc = opusPacket[0];
+  const config = toc >> 3 & 31;
+  const frameSizes = [
+    480,
+    960,
+    1920,
+    2880,
+    // SILK-only (NB)
+    480,
+    960,
+    1920,
+    2880,
+    // SILK-only (MB)
+    480,
+    960,
+    1920,
+    2880,
+    // SILK-only (WB)
+    480,
+    960,
+    1920,
+    2880,
+    // Hybrid (SWB)
+    480,
+    960,
+    1920,
+    2880,
+    // Hybrid (FB)
+    120,
+    240,
+    480,
+    960,
+    // CELT-only (NB)
+    120,
+    240,
+    480,
+    960,
+    // CELT-only (WB)
+    120,
+    240,
+    480,
+    960,
+    // CELT-only (SWB)
+    120,
+    240,
+    480,
+    960
+    // CELT-only (FB)
+  ];
+  return frameSizes[config] || 960;
+};
+
 // src/webm/webmDisassemble.ts
 var debugLog2 = (...args) => debugger_default.debugLog("disassembler", ...args);
 var disassembleWebM = (data) => {
@@ -265,10 +319,10 @@ var disassembleWebM = (data) => {
   const { frames: webMFrames, channels, sampleRate } = extractFramesAndMeta(data);
   debugLog2(`Extracted ${webMFrames.length} WebM frames`);
   const preskip = 312;
-  const samplesPerFrame = 960;
+  debugLog2(`Using channels=${channels}, preskip=${preskip}, sampleRate=${sampleRate}`);
   const frames = webMFrames.map((frame) => ({
     data: frame,
-    samples: samplesPerFrame
+    samples: getOpusSamples(frame)
     // WebM doesn't store this, assume 20ms frames
   }));
   debugLog2(`Converted to ${frames.length} Opus frames`);

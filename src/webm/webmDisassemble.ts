@@ -2,6 +2,7 @@ import { OpusFrame, OpusStream } from "../types/opus";
 import { EBML_IDS } from "./EBMLTypes";
 import { decodeString, processSimpleBlock, readId, readVINT } from "./webmParse";
 import debug from "../common/debugger";
+import { getOpusSamples } from "../opus/opusParsing";
 
 const debugLog = (...args: any[]) => debug.debugLog('disassembler', ...args);
 
@@ -11,12 +12,15 @@ export const disassembleWebM = (data: Uint8Array): OpusStream => {
     debugLog(`Extracted ${webMFrames.length} WebM frames`);
 
     // Extract codec info from WebM (simplified - assume defaults)
-    const preskip = 312;
-    const samplesPerFrame = 960; // 20ms at 48kHz
+    const preskip = 312; // Default Opus preskip in WebM if not specified, usually 312 samples
+                         // (20ms at 48kHz), rarely different.
 
+    debugLog(`Using channels=${channels}, preskip=${preskip}, sampleRate=${sampleRate}`);
+    
+    // Convert to OpusFrame format used by OpusStream
     const frames: OpusFrame[] = webMFrames.map(frame => ({
         data: frame,
-        samples: samplesPerFrame, // WebM doesn't store this, assume 20ms frames
+        samples: getOpusSamples(frame), // WebM doesn't store this, assume 20ms frames
     }));
 
     debugLog(`Converted to ${frames.length} Opus frames`);
