@@ -296,6 +296,25 @@ let { result, meta } = appendToAccumulator(prepared, [newChunk1, newChunk2], met
 ({ result, meta } = appendToAccumulator(result, [newChunk3], meta));
 ```
 
+### Working with MediaRecorder chunks
+
+MediaRecorder emits two types of data:
+- **Complete files** (on `stop()`): Full containers with headers - use `concatChunks()` or `appendToAccumulator()`
+- **Data chunks** (on `ondataavailable` during recording): Raw audio data without container headers
+
+For chunks, specify the format explicitly:
+```ts
+import { appendToAccumulator, AudioFormat } from "opus-accumulator";
+
+mediaRecorder.ondataavailable = async (event) => {
+  const chunk = new Uint8Array(await event.data.arrayBuffer());
+  
+  // Specify format for chunks (browser-dependent)
+  const format = isChrome ? AudioFormat.WEBM : AudioFormat.OGG_OPUS;
+  
+  ({ result, meta } = appendToAccumulator(result, [chunk], meta, format));
+};
+
 ---
 
 ### `AccumulatorState` interface

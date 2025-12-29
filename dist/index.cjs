@@ -100,7 +100,7 @@ var disassembleOgg = (data, isChunk) => {
   let offset = oggStart;
   let pageCount = 0;
   let serialNumber;
-  let channels = 0;
+  let channels = 1;
   let preskip = 312;
   let sampleRate = 48e3;
   let lastGranule = BigInt(0);
@@ -341,8 +341,8 @@ var extractFramesAndMeta = (buffer, isChunk) => {
   let currentTrackEntryNo = -1;
   let opusTrackNo = -1;
   let elementsCount = 0;
-  let channels = 0;
-  let sampleRate = 0;
+  let channels = 1;
+  let sampleRate = 48e3;
   while (parentEnds.length > 0) {
     elementsCount++;
     const currentEnd = parentEnds[parentEnds.length - 1];
@@ -404,14 +404,15 @@ var extractFramesAndMeta = (buffer, isChunk) => {
         break;
       // Actual Opus frame data:
       case EBML_IDS.SimpleBlock:
+        offset = dataEnd;
         debugLog2(`Processing SimpleBlock at offset ${dataStart}`);
-        if (opusTrackNo === -1 && !isChunk) {
+        if (!isChunk && opusTrackNo === -1) {
           debugLog2(`No Opus track identified yet, skipping SimpleBlock`);
           break;
         }
         const blockTrackNo = readVINT(buffer, dataStart);
         debugLog2(`SimpleBlock TrackNumber: ${blockTrackNo.value}, Opus TrackNumber: ${opusTrackNo}`);
-        if (Number(blockTrackNo.value) !== opusTrackNo && !isChunk)
+        if (!isChunk && Number(blockTrackNo.value) !== opusTrackNo)
           break;
         const flags = buffer[dataStart + blockTrackNo.size + 2];
         const lacingType = (flags & 6) >> 1;
@@ -421,7 +422,6 @@ var extractFramesAndMeta = (buffer, isChunk) => {
         const newFrames = processSimpleBlock(buffer.subarray(blockDataStart, blockDataEnd), lacingType);
         debugLog2(`Extracted ${newFrames.length} frames from SimpleBlock`);
         frames.push(...newFrames);
-        offset = dataEnd;
         break;
       // --- ANYTHING ELSE (Skip) ---
       default:

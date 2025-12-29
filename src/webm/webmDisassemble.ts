@@ -43,8 +43,8 @@ export const extractFramesAndMeta = (buffer: Uint8Array, isChunk: boolean): { fr
     let currentTrackEntryNo = -1;
     let opusTrackNo = -1;
     let elementsCount = 0;
-    let channels = 0;
-    let sampleRate = 0;
+    let channels = 1;
+    let sampleRate = 48000;
 
     while (parentEnds.length > 0) {
         elementsCount++;
@@ -130,9 +130,10 @@ export const extractFramesAndMeta = (buffer: Uint8Array, isChunk: boolean): { fr
 
             // Actual Opus frame data:
             case EBML_IDS.SimpleBlock:
+                offset = dataEnd;
                 // Process SimpleBlock frame (extract if Opus frames)
                 debugLog(`Processing SimpleBlock at offset ${dataStart}`);
-                if (opusTrackNo === -1 && !isChunk) {
+                if (!isChunk && opusTrackNo === -1) {
                     debugLog(`No Opus track identified yet, skipping SimpleBlock`);
                     break;
                 }
@@ -141,7 +142,7 @@ export const extractFramesAndMeta = (buffer: Uint8Array, isChunk: boolean): { fr
 
                 debugLog(`SimpleBlock TrackNumber: ${blockTrackNo.value}, Opus TrackNumber: ${opusTrackNo}`);
 
-                if (Number(blockTrackNo.value) !== opusTrackNo && !isChunk)
+                if (!isChunk && Number(blockTrackNo.value) !== opusTrackNo)
                     break;
 
                 const flags = buffer[dataStart + blockTrackNo.size + 2];
@@ -158,7 +159,6 @@ export const extractFramesAndMeta = (buffer: Uint8Array, isChunk: boolean): { fr
                 debugLog(`Extracted ${newFrames.length} frames from SimpleBlock`);
 
                 frames.push(...newFrames);
-                offset = dataEnd;
                 break;
 
             // --- ANYTHING ELSE (Skip) ---

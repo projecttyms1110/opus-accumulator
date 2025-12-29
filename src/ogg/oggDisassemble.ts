@@ -16,7 +16,7 @@ export const disassembleOgg = (data: Uint8Array, isChunk: boolean): OpusStream =
     let offset = oggStart;
     let pageCount = 0;
     let serialNumber: number | undefined;
-    let channels = 0;
+    let channels = 1;
     let preskip = 312;
     let sampleRate = 48000;
     let lastGranule = BigInt(0);

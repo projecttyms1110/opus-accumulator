@@ -34,7 +34,7 @@ declare const prepareAccumulator: (data: Uint8Array) => {
  * @param acc File to append to
  * @param files additional files to append, `.opus` (opus-in-ogg) files
  * @param accMeta Metadata about the current accumulator state
- * @param chunkFormat Format for chunks, for chunks that may lack headers
+ * @param chunkFormat Format if using chunks, for chunks lack headers
  * @returns Updated accumulator (concatenated Opus file ready for further appending) and metadata for next append
  */
 declare const appendToAccumulator: (acc: Uint8Array, files: Uint8Array[], accMeta: AccumulatorState, chunkFormat?: AudioFormat) => {
