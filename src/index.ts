@@ -1,3 +1,4 @@
+import { AudioFormat } from "./common/audioTypes";
 import debug, { DebugCategory } from "./common/debugger";
 import { disassembleOpusFile } from "./common/disassemble";
 import { assembleOgg } from "./ogg/oggAssemble";
@@ -104,30 +105,32 @@ export const prepareAccumulator = (
 };
 
 /**
- * Append new chunks to an existing accumulator
+ * Append new files (complete containers) to an existing accumulator
  * @param acc File to append to
- * @param chunks additional chunks to append, `.opus` (opus-in-ogg) files
+ * @param files additional files to append, `.opus` (opus-in-ogg) files
  * @param accMeta Metadata about the current accumulator state
+ * @param chunkFormat Format if using chunks, for chunks lack headers
  * @returns Updated accumulator (concatenated Opus file ready for further appending) and metadata for next append
  */
 export const appendToAccumulator = (
     acc: Uint8Array,
-    chunks: Uint8Array[],
-    accMeta: AccumulatorState
+    files: Uint8Array[],
+    accMeta: AccumulatorState,
+    chunkFormat?: AudioFormat,
 ): { result: Uint8Array; meta: AccumulatorState } => {
-    debugLog(`\n=== Appending ${chunks.length} chunks to accumulator ===`);
+    debugLog(`\n=== Appending ${files.length} chunks to accumulator ===`);
     debugLog(`Starting state: seq=${accMeta.lastPageSequence}, granule=${accMeta.cumulativeGranule}, size=${accMeta.totalSize}`);
 
     const dataPages: Uint8Array[] = [];
     let pageSequence = accMeta.lastPageSequence + 1;
     let granule = accMeta.cumulativeGranule;
 
-    for (let i = 0; i < chunks.length; i++) {
-        const chunk = chunks[i];
-        debugLog(`\n--- Processing chunk ${i + 1}/${chunks.length} (${chunk.length} bytes) ---`);
+    for (let i = 0; i < files.length; i++) {
+        const chunk = files[i];
+        debugLog(`\n--- Processing chunk ${i + 1}/${files.length} (${chunk.length} bytes) ---`);
 
-        // Disassemble chunk (auto-detects format)
-        const stream = disassembleOpusFile(chunk);
+        // Disassemble chunk (auto-detects format for full files, uses chunkFormat for chunks)
+        const stream = disassembleOpusFile(chunk, chunkFormat);
 
         // Assemble into data pages only (no headers)
         const { data: chunkData, pageCount, finalGranule } = assembleOgg(stream, {

@@ -2,8 +2,8 @@ import { OpusFrame, OpusStream } from "../types/opus";
 import { findOggStart, parseOggPage } from "./oggParsing";
 import debug from "../common/debugger";
 
-export const disassembleOgg = (data: Uint8Array): OpusStream => {
-    const oggStart = findOggStart(data);
+export const disassembleOgg = (data: Uint8Array, isChunk: boolean): OpusStream => {
+    const oggStart = isChunk ? 0 : findOggStart(data);
     if (oggStart === -1) {
         throw new Error('No Ogg data found');
     }
@@ -16,7 +16,7 @@ export const disassembleOgg = (data: Uint8Array): OpusStream => {
     let offset = oggStart;
     let pageCount = 0;
     let serialNumber: number | undefined;
-    let channels = 2;
+    let channels = 0;
     let preskip = 312;
     let sampleRate = 48000;
     let lastGranule = BigInt(0);
@@ -28,7 +28,7 @@ export const disassembleOgg = (data: Uint8Array): OpusStream => {
             break;
         }
 
-        if (pageCount === 0) {
+        if (pageCount === 0 && !isChunk) {
             // Parse OpusHead for metadata
             serialNumber = page.serialNumber;
             const bodyOffset = 27 + page.segments;
@@ -37,7 +37,7 @@ export const disassembleOgg = (data: Uint8Array): OpusStream => {
             preskip = view.getUint16(10, true);
             sampleRate = view.getUint32(12, true);
             debug.debugLog(`OpusHead: channels=${channels}, preskip=${preskip}, sampleRate=${sampleRate}, serial=${serialNumber}`);
-        } else if (pageCount === 1) {
+        } else if (pageCount === 1 && !isChunk) {
             // Skip OpusTags
             debug.debugLog(`Skipping OpusTags page`);
         } else {

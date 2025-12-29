@@ -2,14 +2,14 @@
 
 **Incrementally append Opus audio chunks into a valid `.opus` file — without FFmpeg, WASM, or re-encoding.**
 
-This library allows you to **append new Ogg/Opus chunks to an existing `.opus` file in an append-only way**, preserving all existing bytes. It also creates one if you don't have any.
+This library allows you to **append new Ogg/Opus files or chunks to an existing `.opus` file in an append-only way**, preserving all existing bytes. It also creates one if you don't have any.
 The output file remains **valid and playable after every append**.
 
 It is designed for **browser-based, offline-first, incremental audio recording** workflows.
 
 ## Why this exists
 
-Recording audio in the browser usually produces **multiple Opus chunks** (e.g. via `MediaRecorder` or WebRTC). Joining those chunks correctly is surprisingly hard.
+Recording audio in the browser, usually produces **multiple Opus chunks** (e.g. via `MediaRecorder` or WebRTC), multiple Ogg/WebM containers if not done in one session. Joining those correctly is surprisingly hard.
 
 ### The usual options are bad
 
@@ -67,7 +67,7 @@ This enables a clean separation of concerns:
 
 * **Recording** can happen independently
 * **Uploading / syncing** can be a background process
-* The server only ever needs to support *“append more bytes”*
+* The server only ever needs to support *“append more bytes”* i.e. resume upload.
 
 No Opus parsing or audio knowledge is required on the backend.
 

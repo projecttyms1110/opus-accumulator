@@ -1,3 +1,9 @@
+declare enum AudioFormat {
+    OGG_OPUS = 0,
+    WEBM = 1,
+    UNKNOWN = 2
+}
+
 type DebugCategory = 'parser' | 'disassembler' | 'assembler' | 'index';
 
 declare const setDebug: (enabled: boolean) => void;
@@ -24,13 +30,14 @@ declare const prepareAccumulator: (data: Uint8Array) => {
     meta: AccumulatorState;
 };
 /**
- * Append new chunks to an existing accumulator
+ * Append new files (complete containers) to an existing accumulator
  * @param acc File to append to
- * @param chunks additional chunks to append, `.opus` (opus-in-ogg) files
+ * @param files additional files to append, `.opus` (opus-in-ogg) files
  * @param accMeta Metadata about the current accumulator state
+ * @param chunkFormat Format for chunks, for chunks that may lack headers
  * @returns Updated accumulator (concatenated Opus file ready for further appending) and metadata for next append
  */
-declare const appendToAccumulator: (acc: Uint8Array, chunks: Uint8Array[], accMeta: AccumulatorState) => {
+declare const appendToAccumulator: (acc: Uint8Array, files: Uint8Array[], accMeta: AccumulatorState, chunkFormat?: AudioFormat) => {
     result: Uint8Array;
     meta: AccumulatorState;
 };

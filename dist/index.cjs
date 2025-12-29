@@ -30,21 +30,21 @@ __export(index_exports, {
 module.exports = __toCommonJS(index_exports);
 
 // src/common/debugger.ts
-var exports2 = {
+var exported = {
   isDebug: false,
   customLogger: null,
   enabledCategories: /* @__PURE__ */ new Set([]),
   debugLog: (category, ...args) => {
-    if (!exports2.isDebug) return;
-    if (exports2.enabledCategories.size && !exports2.enabledCategories.has(category)) return;
-    if (exports2.customLogger) {
-      exports2.customLogger(category, ...args);
+    if (!exported.isDebug) return;
+    if (exported.enabledCategories.size && !exported.enabledCategories.has(category)) return;
+    if (exported.customLogger) {
+      exported.customLogger(category, ...args);
     } else {
       console.debug(`Category: ${category}`, ...args);
     }
   }
 };
-var debugger_default = exports2;
+var debugger_default = exported;
 
 // src/ogg/oggParsing.ts
 var findOggStart = (data) => {
@@ -88,8 +88,8 @@ var parseOggPage = (data, offset) => {
 };
 
 // src/ogg/oggDisassemble.ts
-var disassembleOgg = (data) => {
-  const oggStart = findOggStart(data);
+var disassembleOgg = (data, isChunk) => {
+  const oggStart = isChunk ? 0 : findOggStart(data);
   if (oggStart === -1) {
     throw new Error("No Ogg data found");
   }
@@ -100,7 +100,7 @@ var disassembleOgg = (data) => {
   let offset = oggStart;
   let pageCount = 0;
   let serialNumber;
-  let channels = 2;
+  let channels = 0;
   let preskip = 312;
   let sampleRate = 48e3;
   let lastGranule = BigInt(0);
@@ -110,7 +110,7 @@ var disassembleOgg = (data) => {
       debugger_default.debugLog(`Failed to parse Ogg page at offset ${offset}`);
       break;
     }
-    if (pageCount === 0) {
+    if (pageCount === 0 && !isChunk) {
       serialNumber = page.serialNumber;
       const bodyOffset = 27 + page.segments;
       channels = data[offset + bodyOffset + 9];
@@ -118,7 +118,7 @@ var disassembleOgg = (data) => {
       preskip = view.getUint16(10, true);
       sampleRate = view.getUint32(12, true);
       debugger_default.debugLog(`OpusHead: channels=${channels}, preskip=${preskip}, sampleRate=${sampleRate}, serial=${serialNumber}`);
-    } else if (pageCount === 1) {
+    } else if (pageCount === 1 && !isChunk) {
       debugger_default.debugLog(`Skipping OpusTags page`);
     } else {
       const bodyOffset = 27 + page.segments;
@@ -314,9 +314,9 @@ var getOpusSamples = (opusPacket) => {
 
 // src/webm/webmDisassemble.ts
 var debugLog2 = (...args) => debugger_default.debugLog("disassembler", ...args);
-var disassembleWebM = (data) => {
+var disassembleWebM = (data, isChunk) => {
   debugLog2("Extracting WebM frames");
-  const { frames: webMFrames, channels, sampleRate } = extractFramesAndMeta(data);
+  const { frames: webMFrames, channels, sampleRate } = extractFramesAndMeta(data, isChunk);
   debugLog2(`Extracted ${webMFrames.length} WebM frames`);
   const preskip = 312;
   debugLog2(`Using channels=${channels}, preskip=${preskip}, sampleRate=${sampleRate}`);
@@ -334,7 +334,7 @@ var disassembleWebM = (data) => {
     sampleRate
   };
 };
-var extractFramesAndMeta = (buffer) => {
+var extractFramesAndMeta = (buffer, isChunk) => {
   const parentEnds = [buffer.length];
   const frames = [];
   let offset = 0;
@@ -366,6 +366,7 @@ var extractFramesAndMeta = (buffer) => {
         debugLog2(`Entering container ID 0x${id.value.toString(16)} at offset ${offset}, ends at ${dataEnd}`);
         break;
       // --- LEAF ELEMENTS WITH REQUIRED DATA (Process) ---
+      // Metadata needed to interpret Opus frames:
       case EBML_IDS.TrackNumber:
         const trackNo = readVINT(buffer, dataStart);
         currentTrackEntryNo = Number(trackNo.value);
@@ -401,19 +402,20 @@ var extractFramesAndMeta = (buffer) => {
         offset = dataEnd;
         debugLog2(`Processed SamplingFrequency: ${sampleRate} for TrackEntry number: ${currentTrackEntryNo}`);
         break;
+      // Actual Opus frame data:
       case EBML_IDS.SimpleBlock:
         debugLog2(`Processing SimpleBlock at offset ${dataStart}`);
-        if (opusTrackNo === -1) {
+        if (opusTrackNo === -1 && !isChunk) {
           debugLog2(`No Opus track identified yet, skipping SimpleBlock`);
           break;
         }
         const blockTrackNo = readVINT(buffer, dataStart);
         debugLog2(`SimpleBlock TrackNumber: ${blockTrackNo.value}, Opus TrackNumber: ${opusTrackNo}`);
-        if (Number(blockTrackNo.value) !== opusTrackNo)
+        if (Number(blockTrackNo.value) !== opusTrackNo && !isChunk)
           break;
         const flags = buffer[dataStart + blockTrackNo.size + 2];
         const lacingType = (flags & 6) >> 1;
-        debugLog2(`SimpleBlock lacing type: ${lacingType} ( ${["Xiph", "Fixed", "EBML"][lacingType - 1]})`);
+        debugLog2(`SimpleBlock lacing type: ${lacingType} ( ${LACING_TYPES[lacingType]})`);
         const blockDataStart = dataStart + blockTrackNo.size + 2 + 1;
         const blockDataEnd = dataEnd;
         const newFrames = processSimpleBlock(buffer.subarray(blockDataStart, blockDataEnd), lacingType);
@@ -433,6 +435,12 @@ var extractFramesAndMeta = (buffer) => {
     }
   }
   debugLog2(`Total elements processed: ${elementsCount}`);
+  if (opusTrackNo === -1) {
+    debugLog2(`Warning: No Opus track found in WebM file.`);
+  } else {
+    debugLog2(`Opus track number: ${opusTrackNo}, channels: ${channels}, sampleRate: ${sampleRate}`);
+    debugLog2(`Extracted ${frames.length} total Opus frames from WebM`);
+  }
   return { frames, channels, sampleRate };
 };
 
@@ -458,14 +466,15 @@ var detectFormat = (data) => {
 
 // src/common/disassemble.ts
 var debugLog3 = (...args) => debugger_default.debugLog("disassembler", ...args);
-var disassembleOpusFile = (data) => {
-  const format = detectFormat(data);
+var disassembleOpusFile = (data, chunkFormat) => {
+  const isChunk = chunkFormat !== void 0;
+  const format = isChunk ? chunkFormat : detectFormat(data);
   debugLog3(`Detected format: ${AudioFormat[format]}`);
   switch (format) {
     case 0 /* OGG_OPUS */:
-      return disassembleOgg(data);
+      return disassembleOgg(data, isChunk);
     case 1 /* WEBM */:
-      return disassembleWebM(data);
+      return disassembleWebM(data, isChunk);
     case 2 /* UNKNOWN */:
       throw new Error("Unknown audio format (not Ogg Opus or WebM)");
   }
@@ -599,9 +608,9 @@ var createOggPage = (options) => {
 var { debugLog: debugLog4 } = debugger_default;
 var assembleOgg = (stream, options) => {
   const serialNumber = options?.serialNumber || stream.serialNumber || Math.floor(Math.random() * 4294967295);
-  const includeHeaders = options?.includeHeaders === null ? true : options?.includeHeaders;
-  let pageSequence = options?.startingSequence === null ? 0 : options?.startingSequence || 0;
-  let granule = options?.startingGranule === null ? BigInt(0) : options?.startingGranule || BigInt(0);
+  const includeHeaders = options?.includeHeaders === void 0 ? true : options?.includeHeaders;
+  let pageSequence = options?.startingSequence === void 0 ? 0 : options?.startingSequence || 0;
+  let granule = options?.startingGranule === void 0 ? BigInt(0) : options?.startingGranule || BigInt(0);
   const pages = [];
   let pageCount = 0;
   if (includeHeaders) {
@@ -733,18 +742,18 @@ var prepareAccumulator = (data) => {
     }
   };
 };
-var appendToAccumulator = (acc, chunks, accMeta) => {
+var appendToAccumulator = (acc, files, accMeta, chunkFormat) => {
   debugLog5(`
-=== Appending ${chunks.length} chunks to accumulator ===`);
+=== Appending ${files.length} chunks to accumulator ===`);
   debugLog5(`Starting state: seq=${accMeta.lastPageSequence}, granule=${accMeta.cumulativeGranule}, size=${accMeta.totalSize}`);
   const dataPages = [];
   let pageSequence = accMeta.lastPageSequence + 1;
   let granule = accMeta.cumulativeGranule;
-  for (let i = 0; i < chunks.length; i++) {
-    const chunk = chunks[i];
+  for (let i = 0; i < files.length; i++) {
+    const chunk = files[i];
     debugLog5(`
---- Processing chunk ${i + 1}/${chunks.length} (${chunk.length} bytes) ---`);
-    const stream = disassembleOpusFile(chunk);
+--- Processing chunk ${i + 1}/${files.length} (${chunk.length} bytes) ---`);
+    const stream = disassembleOpusFile(chunk, chunkFormat);
     const { data: chunkData, pageCount, finalGranule } = assembleOgg(stream, {
       serialNumber: accMeta.serialNumber,
       startingSequence: pageSequence,

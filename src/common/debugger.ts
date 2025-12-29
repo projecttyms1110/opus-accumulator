@@ -1,6 +1,6 @@
 export type DebugCategory = 'parser' | 'disassembler' | 'assembler' | 'index';
 
-const exports: {
+const exported: {
     isDebug: boolean;
     customLogger: ((...args: any[]) => void) | null;
     /** Empty set means all categories enabled */
@@ -11,16 +11,16 @@ const exports: {
     customLogger: null,
     enabledCategories: new Set<DebugCategory>([]),
     debugLog: (category: DebugCategory, ...args: any[]) => {
-        if (!exports.isDebug) return;
+        if (!exported.isDebug) return;
 
-        if (exports.enabledCategories.size && !exports.enabledCategories.has(category)) return;
+        if (exported.enabledCategories.size && !exported.enabledCategories.has(category)) return;
 
-        if (exports.customLogger) {
-            exports.customLogger(category, ...args);
+        if (exported.customLogger) {
+            exported.customLogger(category, ...args);
         } else {
             console.debug(`Category: ${category}`, ...args);
         }
     }
 }
 
-export default exports;
+export default exported;

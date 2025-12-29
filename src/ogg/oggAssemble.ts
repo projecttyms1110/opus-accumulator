@@ -10,16 +10,16 @@ const { debugLog } = debug;
  * @param options 
  * @returns 
  */
-export const assembleOgg = (stream: OpusStream, options?: {
+export const assembleOgg = (stream: OpusStream, options: {
     serialNumber?: number;
     startingSequence?: number;
     startingGranule?: bigint;
-    includeHeaders?: boolean;
+    includeHeaders: boolean;
 }): { data: Uint8Array; pageCount: number; finalGranule: bigint } => {
     const serialNumber = options?.serialNumber || stream.serialNumber || Math.floor(Math.random() * 0xFFFFFFFF);
-    const includeHeaders = options?.includeHeaders === null ? true : options?.includeHeaders;
-    let pageSequence = options?.startingSequence === null ? 0 : options?.startingSequence || 0;
-    let granule = options?.startingGranule === null ? BigInt(0) : options?.startingGranule || BigInt(0);
+    const includeHeaders = options?.includeHeaders === undefined ? true : options?.includeHeaders;
+    let pageSequence = options?.startingSequence === undefined ? 0 : options?.startingSequence || 0;
+    let granule = options?.startingGranule === undefined ? BigInt(0) : options?.startingGranule || BigInt(0);
 
     const pages: Uint8Array[] = [];
     let pageCount = 0;

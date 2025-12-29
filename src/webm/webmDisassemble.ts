@@ -1,22 +1,22 @@
 import { OpusFrame, OpusStream } from "../types/opus";
-import { EBML_IDS } from "./EBMLTypes";
+import { EBML_IDS, LACING_TYPES } from "./EBMLTypes";
 import { decodeString, processSimpleBlock, readId, readVINT } from "./webmParse";
 import debug from "../common/debugger";
 import { getOpusSamples } from "../opus/opusParsing";
 
 const debugLog = (...args: any[]) => debug.debugLog('disassembler', ...args);
 
-export const disassembleWebM = (data: Uint8Array): OpusStream => {
+export const disassembleWebM = (data: Uint8Array, isChunk: boolean): OpusStream => {
     debugLog('Extracting WebM frames');
-    const { frames: webMFrames, channels, sampleRate } = extractFramesAndMeta(data);
+    const { frames: webMFrames, channels, sampleRate } = extractFramesAndMeta(data, isChunk);
     debugLog(`Extracted ${webMFrames.length} WebM frames`);
 
     // Extract codec info from WebM (simplified - assume defaults)
     const preskip = 312; // Default Opus preskip in WebM if not specified, usually 312 samples
-                         // (20ms at 48kHz), rarely different.
+    // (20ms at 48kHz), rarely different.
 
     debugLog(`Using channels=${channels}, preskip=${preskip}, sampleRate=${sampleRate}`);
-    
+
     // Convert to OpusFrame format used by OpusStream
     const frames: OpusFrame[] = webMFrames.map(frame => ({
         data: frame,
@@ -36,7 +36,7 @@ export const disassembleWebM = (data: Uint8Array): OpusStream => {
 /**
  * Extract Opus frames from a WebM/Matroska file
  */
-export const extractFramesAndMeta = (buffer: Uint8Array): { frames: Uint8Array[], channels: number, sampleRate: number } => {
+export const extractFramesAndMeta = (buffer: Uint8Array, isChunk: boolean): { frames: Uint8Array[], channels: number, sampleRate: number } => {
     const parentEnds = [buffer.length];
     const frames: Uint8Array[] = [];
     let offset = 0;
@@ -84,6 +84,8 @@ export const extractFramesAndMeta = (buffer: Uint8Array): { frames: Uint8Array[]
                 break;
 
             // --- LEAF ELEMENTS WITH REQUIRED DATA (Process) ---
+
+            // Metadata needed to interpret Opus frames:
             case EBML_IDS.TrackNumber:
                 // Note current TrackNumber (inside TrackEntry, for CodecID lookup)
                 const trackNo = readVINT(buffer, dataStart); // Value is a VINT
@@ -126,10 +128,11 @@ export const extractFramesAndMeta = (buffer: Uint8Array): { frames: Uint8Array[]
                 debugLog(`Processed SamplingFrequency: ${sampleRate} for TrackEntry number: ${currentTrackEntryNo}`);
                 break;
 
+            // Actual Opus frame data:
             case EBML_IDS.SimpleBlock:
                 // Process SimpleBlock frame (extract if Opus frames)
                 debugLog(`Processing SimpleBlock at offset ${dataStart}`);
-                if (opusTrackNo === -1) {
+                if (opusTrackNo === -1 && !isChunk) {
                     debugLog(`No Opus track identified yet, skipping SimpleBlock`);
                     break;
                 }
@@ -138,13 +141,13 @@ export const extractFramesAndMeta = (buffer: Uint8Array): { frames: Uint8Array[]
 
                 debugLog(`SimpleBlock TrackNumber: ${blockTrackNo.value}, Opus TrackNumber: ${opusTrackNo}`);
 
-                if (Number(blockTrackNo.value) !== opusTrackNo)
+                if (Number(blockTrackNo.value) !== opusTrackNo && !isChunk)
                     break;
 
                 const flags = buffer[dataStart + blockTrackNo.size + 2];
                 const lacingType = (flags & 0x06) >> 1;
 
-                debugLog(`SimpleBlock lacing type: ${lacingType} ( ${['Xiph', 'Fixed', 'EBML'][lacingType - 1]})`);
+                debugLog(`SimpleBlock lacing type: ${lacingType} ( ${LACING_TYPES[lacingType]})`);
 
                 // Skip header: TrackNo VINT + 2 (Timecode) + 1 (Flags)
                 const blockDataStart = dataStart + blockTrackNo.size + 2 + 1;
@@ -173,6 +176,13 @@ export const extractFramesAndMeta = (buffer: Uint8Array): { frames: Uint8Array[]
     }
 
     debugLog(`Total elements processed: ${elementsCount}`);
+
+    if (opusTrackNo === -1) {
+        debugLog(`Warning: No Opus track found in WebM file.`);
+    } else {
+        debugLog(`Opus track number: ${opusTrackNo}, channels: ${channels}, sampleRate: ${sampleRate}`);
+        debugLog(`Extracted ${frames.length} total Opus frames from WebM`);
+    }
 
     return { frames, channels, sampleRate };
 }

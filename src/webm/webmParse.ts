@@ -51,8 +51,7 @@ export const decodeString = (data: Uint8Array, offset: number, length: number): 
         .replace(/\0/g, ''); // EBML strings are sometimes null-terminated (0x00) inside the buffer.
 
 const decodeSignedVint = (value: bigint, width: number): bigint => {
-    // This is essentially calculating a Two's Complement-ish offset
-    // used specifically in EBML lacing headers.
+    // This is essentially calculating half the max value for the given width
     const range = (1n << BigInt(7 * width - 1)) - 1n;
     return value - range;
 };
