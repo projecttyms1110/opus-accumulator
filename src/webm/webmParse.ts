@@ -52,7 +52,7 @@ export const decodeString = (data: Uint8Array, offset: number, length: number): 
 
 const decodeSignedVint = (value: bigint, width: number): bigint => {
     // This is essentially calculating half the max value for the given width
-    const range = (1n << BigInt(7 * width - 1)) - 1n;
+    const range = (BigInt(1) << BigInt(7 * width - 1)) - BigInt(1);
     return value - range;
 };
 

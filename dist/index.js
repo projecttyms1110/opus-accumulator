@@ -117,18 +117,18 @@ var disassembleOgg = (data, isChunk) => {
 // src/webm/EBMLTypes.ts
 var EBML_IDS = {
   // Containers:
-  EBML: 0x1A45DFA3n,
-  Segment: 0x18538067n,
-  Tracks: 0x1654AE6Bn,
-  TrackEntry: 0xAEn,
-  Cluster: 0x1F43B675n,
-  BlockGroup: 0xA0n,
+  EBML: BigInt("0x1A45DFA3"),
+  Segment: BigInt("0x18538067"),
+  Tracks: BigInt("0x1654AE6B"),
+  TrackEntry: BigInt("0xAE"),
+  Cluster: BigInt("0x1F43B675"),
+  BlockGroup: BigInt("0xA0"),
   // Leaves:
-  SimpleBlock: 0xA3n,
-  CodecID: 0x86n,
-  ChannelCount: 0x9Fn,
-  SamplingFrequency: 0xB5n,
-  TrackNumber: 0xD7n
+  SimpleBlock: BigInt("0xA3"),
+  CodecID: BigInt("0x86"),
+  ChannelCount: BigInt("0x9F"),
+  SamplingFrequency: BigInt("0xB5"),
+  TrackNumber: BigInt("0xD7")
 };
 var LACING_TYPES = /* @__PURE__ */ ((LACING_TYPES2) => {
   LACING_TYPES2[LACING_TYPES2["NONE"] = 0] = "NONE";
@@ -168,7 +168,7 @@ ${Array.from(data.subarray(offset, offset + width)).map((b) => b.toString(16).pa
 var readId = (data, offset) => readVINT(data, offset, true);
 var decodeString = (data, offset, length) => new TextDecoder("utf-8").decode(data.subarray(offset, offset + length)).replace(/\0/g, "");
 var decodeSignedVint = (value, width) => {
-  const range = (1n << BigInt(7 * width - 1)) - 1n;
+  const range = (BigInt(1) << BigInt(7 * width - 1)) - BigInt(1);
   return value - range;
 };
 var processSimpleBlock = (data, lacingType) => {

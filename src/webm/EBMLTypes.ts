@@ -3,19 +3,19 @@
  */
 export const EBML_IDS = {
     // Containers:
-    EBML: 0x1A45DFA3n,
-    Segment: 0x18538067n,
-    Tracks: 0x1654AE6Bn,
-    TrackEntry: 0xAEn,
-    Cluster: 0x1F43B675n,
-    BlockGroup: 0xA0n,
+    EBML: BigInt("0x1A45DFA3"),
+    Segment: BigInt("0x18538067"),
+    Tracks: BigInt("0x1654AE6B"),
+    TrackEntry: BigInt("0xAE"),
+    Cluster: BigInt("0x1F43B675"),
+    BlockGroup: BigInt("0xA0"),
 
     // Leaves:
-    SimpleBlock: 0xA3n,
-    CodecID: 0x86n,
-    ChannelCount: 0x9Fn,
-    SamplingFrequency: 0xB5n,
-    TrackNumber: 0xD7n,
+    SimpleBlock: BigInt("0xA3"),
+    CodecID: BigInt("0x86"),
+    ChannelCount: BigInt("0x9F"),
+    SamplingFrequency: BigInt("0xB5"),
+    TrackNumber: BigInt("0xD7"),
 }
 
 export enum LACING_TYPES {
